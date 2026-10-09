@@ -1,67 +1,116 @@
-import pandas as pd
+import duckdb
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-input_path = root / "data" / "NF-CSE-CIC-IDS2018-v2.csv"
+
+input_path = root / "data" / "NF-CICIDS2018-v3.csv"
 output_dir = root / "data" / "processed_cicids"
 output_dir.mkdir(parents=True, exist_ok=True)
 
-total_unique = 18893389
-train_end = int(total_unique * 0.70)
-val_end = int(total_unique * 0.80)
+db_path = root / "data" / "cicids_processing.duckdb"
+temp_dir = root / "data" / "duckdb_temp"
+temp_dir.mkdir(parents=True, exist_ok=True)
 
-seen = set()
-written = 0
+con = duckdb.connect(str(db_path))
+
+# Limit memory usage and allow DuckDB to spill to disk
+con.execute("SET memory_limit='4GB'")
+con.execute(f"SET temp_directory='{temp_dir}'")
+
+print("Loading, deduplicating, and sorting CICIDS v3...")
+
+con.execute(f"""
+CREATE OR REPLACE TABLE cicids_sorted AS
+SELECT
+    *,
+    ROW_NUMBER() OVER (
+        ORDER BY FLOW_START_MILLISECONDS
+    ) AS _row_id
+FROM (
+    SELECT DISTINCT *
+    FROM read_csv_auto(
+        '{input_path}',
+        header=true
+    )
+)
+""")
+
+total = con.execute(
+    "SELECT COUNT(*) FROM cicids_sorted"
+).fetchone()[0]
+
+train_end = int(total * 0.70)
+val_end = int(total * 0.80)
+
+print(f"Total unique rows: {total:,}")
+print(f"Train: {train_end:,}")
+print(f"Validation: {val_end - train_end:,}")
+print(f"Test: {total - val_end:,}")
 
 train_path = output_dir / "train.csv"
 val_path = output_dir / "val.csv"
 test_path = output_dir / "test.csv"
 
-for p in [train_path, val_path, test_path]:
-    if p.exists():
-        p.unlink()
+print("\nWriting train split...")
 
-for chunk in pd.read_csv(input_path, chunksize=200000):
-    hashes = pd.util.hash_pandas_object(chunk, index=False).to_numpy()
+con.execute(f"""
+COPY (
+    SELECT * EXCLUDE (_row_id)
+    FROM cicids_sorted
+    WHERE _row_id <= {train_end}
+    ORDER BY _row_id
+)
+TO '{train_path}'
+(HEADER, DELIMITER ',')
+""")
 
-    keep = []
-    for h in hashes:
-        h = int(h)
-        if h in seen:
-            keep.append(False)
-        else:
-            seen.add(h)
-            keep.append(True)
+print("Writing validation split...")
 
-    chunk = chunk[keep]
+con.execute(f"""
+COPY (
+    SELECT * EXCLUDE (_row_id)
+    FROM cicids_sorted
+    WHERE _row_id > {train_end}
+      AND _row_id <= {val_end}
+    ORDER BY _row_id
+)
+TO '{val_path}'
+(HEADER, DELIMITER ',')
+""")
 
-    while len(chunk) > 0:
-        if written < train_end:
-            path = train_path
-            limit = train_end
-        elif written < val_end:
-            path = val_path
-            limit = val_end
-        else:
-            path = test_path
-            limit = total_unique
+print("Writing test split...")
 
-        take = min(len(chunk), limit - written)
-        part = chunk.iloc[:take]
+con.execute(f"""
+COPY (
+    SELECT * EXCLUDE (_row_id)
+    FROM cicids_sorted
+    WHERE _row_id > {val_end}
+    ORDER BY _row_id
+)
+TO '{test_path}'
+(HEADER, DELIMITER ',')
+""")
 
-        part.to_csv(
-            path,
-            mode="a",
-            header=not path.exists(),
-            index=False
-        )
+print("\nTimestamp ranges:")
 
-        written += take
-        chunk = chunk.iloc[take:]
+for split_name, start, end in [
+    ("Train", 1, train_end),
+    ("Validation", train_end + 1, val_end),
+    ("Test", val_end + 1, total),
+]:
+    result = con.execute(f"""
+        SELECT
+            MIN(FLOW_START_MILLISECONDS),
+            MAX(FLOW_START_MILLISECONDS)
+        FROM cicids_sorted
+        WHERE _row_id BETWEEN {start} AND {end}
+    """).fetchone()
 
-    print(f"Written: {written:,}")
+    print(
+        f"{split_name}: "
+        f"{result[0]} -> {result[1]}"
+    )
 
-print("\nTrain:", train_end)
-print("Validation:", val_end - train_end)
-print("Test:", total_unique - val_end)
-print("Total:", written)
+con.close()
+
+print("\nDone.")

@@ -9,7 +9,14 @@ data_dir = root / "data" / "processed"
 out_dir = root / "data" / "features"
 out_dir.mkdir(parents=True, exist_ok=True)
 
-drop_cols = ["IPV4_SRC_ADDR", "IPV4_DST_ADDR", "Label", "Attack"]
+drop_cols = [
+    "IPV4_SRC_ADDR",
+    "IPV4_DST_ADDR",
+    "Label",
+    "Attack",
+    "MIN_TTL",
+    "MAX_TTL",
+]
 
 log_cols = [
     "IN_BYTES",
