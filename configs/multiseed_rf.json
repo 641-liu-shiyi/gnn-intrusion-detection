@@ -1,0 +1,14 @@
+{
+  "experiment_name": "multiseed_stability_rf",
+  "model": "rf",
+  "dataset": "unsw",
+  "max_samples": 50000,
+  "seeds": [42, 43, 44],
+  "output_root": "results/experiments",
+  "base_params": {
+    "n_estimators": 20,
+    "max_depth": 12,
+    "workers": 4,
+    "class_weight": "balanced_subsample"
+  }
+}

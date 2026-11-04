@@ -1,0 +1,7 @@
+Dataset,Model,Train_Flows,Train_Time_Seconds,Test_Flows,Test_Inference_Seconds,Test_Throughput_Flows_Sec,Hardware
+UNSW,Random Forest,"1,670,000",338.4,"475,000",0.72,"658,882","CPU (4 workers, scikit-learn)"
+UNSW,XGBoost,"1,670,000",71.7,"475,000",4.88,"97,435","CPU (4 workers, tree_method=hist)"
+UNSW,PyTorch MLP,"1,670,000",219.8,"475,000",0.16,"3,055,633",CPU (PyTorch batch=512)
+CICIDS,Random Forest,"100,000",18.2,"3,895,000",4.68,"832,114","CPU (4 workers, scikit-learn)"
+CICIDS,XGBoost,"100,000",15.4,"3,895,000",37.37,"104,221","CPU (4 workers, tree_method=hist)"
+CICIDS,PyTorch MLP,"100,000",24.6,"3,895,000",1.33,"2,918,440",CPU (PyTorch batch=512)

@@ -1,0 +1,19 @@
+[project]
+name = "gnn-intrusion-detection"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "joblib>=1.6.0",
+    "numpy>=2.4.6",
+    "pandas>=3.0.6",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.17.1",
+    "torch>=2.14.1",
+    "xgboost>=3.2.0",
+    "matplotlib>=3.9.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

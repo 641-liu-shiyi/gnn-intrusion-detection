@@ -1,0 +1,18 @@
+{
+  "experiment_name": "ablation_class_weight_mlp",
+  "model": "mlp",
+  "dataset": "unsw",
+  "max_samples": 50000,
+  "seeds": [42],
+  "output_root": "results/experiments",
+  "base_params": {
+    "max_epochs": 5,
+    "batch_size": 512,
+    "learning_rate": 0.001,
+    "workers": 2,
+    "class_weight": "balanced"
+  },
+  "ablations": {
+    "class_weight": ["balanced", "none"]
+  }
+}

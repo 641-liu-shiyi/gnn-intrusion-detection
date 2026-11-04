@@ -1,0 +1,8 @@
+| Model | Split | Accuracy | Macro F1 | Weighted F1 | Binary Precision | Binary Recall | Binary F1 | Binary AP |
+|---|---|---|---|---|---|---|---|---|
+| Random Forest | Validation | 0.9759 | 0.6047 | 0.9793 | 0.9013 | 0.9995 | 0.9478 | 0.9752 |
+| Random Forest | Held-Out Test | 0.9726 | 0.6136 | 0.9765 | 0.9115 | 0.9991 | 0.9533 | 0.9783 |
+| XGBoost | Validation | 0.9784 | 0.6516 | 0.9819 | 0.9079 | 0.9995 | 0.9515 | 0.9506 |
+| XGBoost | Held-Out Test | 0.9747 | 0.6506 | 0.9787 | 0.9137 | 0.9997 | 0.9548 | 0.9498 |
+| PyTorch MLP | Validation | 0.9671 | 0.5079 | 0.9725 | 0.8356 | 0.9985 | 0.9098 | 0.9265 |
+| PyTorch MLP | Held-Out Test | 0.9650 | 0.5237 | 0.9704 | 0.8636 | 0.9986 | 0.9262 | 0.9356 |
