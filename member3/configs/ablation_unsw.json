@@ -1,0 +1,15 @@
+{
+  "base": "member3/configs/unsw_egraphsage_mean.json",
+  "config_dir": "member3/configs/ablation_unsw",
+  "out_dir": "runs/ablation_unsw",
+  "seeds": [0, 1, 2],
+  "variants": {
+    "baseline": {},
+    "sum_aggr": {"model.aggr": "sum"},
+    "attention_aggr": {"model.aggr": "attention"},
+    "one_direction": {"model.bidirectional": false},
+    "edge_in_head": {"model.head_edge_attr": true},
+    "no_graph": {"model.num_layers": 0, "model.head_edge_attr": true},
+    "one_layer": {"model.num_layers": 1}
+  }
+}

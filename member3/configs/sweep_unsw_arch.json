@@ -1,0 +1,13 @@
+{
+  "base": "member3/configs/unsw_egraphsage_mean.json",
+  "config_dir": "member3/configs/sweep_unsw_arch",
+  "out_dir": "runs/sweep_unsw_arch",
+  "seeds": [0],
+  "grid": {
+    "model.aggr": ["mean"],
+    "model.num_layers": [1, 2, 3],
+    "model.hidden_dim": [64, 128, 256],
+    "train.lr": [0.003, 0.001, 0.0003],
+    "train.class_weighting": ["inverse"]
+  }
+}

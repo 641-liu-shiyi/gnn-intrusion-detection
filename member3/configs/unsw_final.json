@@ -1,0 +1,33 @@
+{
+  "seed": 0,
+  "device": "cuda",
+  "out_dir": "runs/sweep_unsw_weighting",
+  "num_classes": 10,
+  "data": {
+    "graph_dir": "data/graphs_unsw",
+    "feature_names": "data/features/feature_names.joblib",
+    "label_key": "edge_attack",
+    "benign_class": 2
+  },
+  "model": {
+    "hidden_dim": 128,
+    "num_layers": 2,
+    "dropout": 0.2,
+    "aggr": "mean",
+    "head_edge_attr": true,
+    "bidirectional": true
+  },
+  "train": {
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "batch_graphs": 8,
+    "epochs": 100,
+    "patience": 10,
+    "class_weighting": "inverse_sqrt"
+  },
+  "eval": {
+    "module": "src.eval.metrics",
+    "function": "compute_metrics",
+    "with_class_names": true
+  }
+}
