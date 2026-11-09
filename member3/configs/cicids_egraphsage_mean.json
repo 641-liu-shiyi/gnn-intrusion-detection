@@ -1,0 +1,32 @@
+{
+  "seed": 0,
+  "device": "cuda",
+  "out_dir": "runs",
+  "num_classes": 15,
+  "data": {
+    "graph_dir": "data/graphs_cicids",
+    "feature_names": "data/features_cicids/feature_names.joblib",
+    "label_key": "edge_attack",
+    "benign_class": 0
+  },
+  "model": {
+    "hidden_dim": 128,
+    "num_layers": 2,
+    "dropout": 0.2,
+    "aggr": "mean",
+    "head_edge_attr": false,
+    "bidirectional": true
+  },
+  "train": {
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "batch_graphs": 8,
+    "epochs": 100,
+    "patience": 10,
+    "class_weighting": "inverse"
+  },
+  "eval": {
+    "module": null,
+    "function": null
+  }
+}
