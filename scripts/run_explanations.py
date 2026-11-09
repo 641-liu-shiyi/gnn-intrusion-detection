@@ -141,6 +141,9 @@ def main() -> int:
             "auto_unsupported_numbers": "; ".join(checks["unsupported_numbers"]),
             "auto_other_classes": "; ".join(checks["other_classes_named"]),
             "auto_speculative_terms": "; ".join(checks["speculative_terms"]),
+            "auto_wording_flags": "; ".join(
+                checks["time_words"] + checks["judgment_terms"] + checks["spelled_numbers"] + checks["format_issues"]
+            ),
             "evidence_json": json.dumps(evidence),
         })
         print(f"[{position}/{len(evidence_rows)}] {alert_id} auto_passed={checks['passed']}")

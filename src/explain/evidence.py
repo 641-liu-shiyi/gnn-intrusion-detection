@@ -41,6 +41,9 @@ REQUIRED_FEATURES = (
     "FLOW_DURATION_MILLISECONDS", "TCP_FLAGS",
 )
 
+# NetFlow timers wrap at 2**32 / 1000 ms, so values just below it are artefacts.
+DURATION_WRAP_MS = 4_290_000
+
 PROTOCOL_NAMES = {1: "ICMP", 6: "TCP", 17: "UDP"}
 TCP_FLAG_BITS = ((1, "FIN"), (2, "SYN"), (4, "RST"), (8, "PSH"), (16, "ACK"), (32, "URG"))
 
@@ -152,6 +155,7 @@ def _flow_evidence(graph: dict[str, np.ndarray], edge: int, decoder: FlowDecoder
     value = lambda name: int(decoder.column(row, name))
     src, dst = (int(x) for x in graph["edge_index"][:, edge])
     protocol = value("PROTOCOL")
+    duration = value("FLOW_DURATION_MILLISECONDS")
     return {
         "source_host": f"host_{src}",
         "destination_host": f"host_{dst}",
@@ -161,7 +165,7 @@ def _flow_evidence(graph: dict[str, np.ndarray], edge: int, decoder: FlowDecoder
         "bytes_destination_to_source": value("OUT_BYTES"),
         "packets_source_to_destination": value("IN_PKTS"),
         "packets_destination_to_source": value("OUT_PKTS"),
-        "duration_ms": value("FLOW_DURATION_MILLISECONDS"),
+        "duration_ms": duration if 0 < duration < DURATION_WRAP_MS else None,
         "tcp_flags_seen": _tcp_flags(value("TCP_FLAGS")),
     }
 
@@ -175,7 +179,7 @@ def _window_context(
     sources, destinations = graph["edge_index"]
     from_src = sources == sources[edge]
     to_dst = destinations == destinations[edge]
-    same_port = dst_ports == dst_ports[edge]
+    same_host_and_port = to_dst & (dst_ports == dst_ports[edge])
     return {
         "flows_in_window": int(sources.size),
         "source_outgoing_flows": int(from_src.sum()),
@@ -183,9 +187,9 @@ def _window_context(
         "source_distinct_destination_ports": int(np.unique(dst_ports[from_src]).size),
         "destination_incoming_flows": int(to_dst.sum()),
         "destination_distinct_source_hosts": int(np.unique(sources[to_dst]).size),
-        "flows_same_source_and_destination_port": int((from_src & same_port).sum()),
-        "source_flows_flagged_malicious": int((from_src & flagged_in_window).sum()),
-        "flows_flagged_malicious_in_window": int(flagged_in_window.sum()),
+        "flows_from_this_source_to_this_host_on_this_port": int((from_src & same_host_and_port).sum()),
+        "flagged_flows_from_this_source": int((from_src & flagged_in_window).sum()),
+        "flagged_flows_from_all_sources": int(flagged_in_window.sum()),
     }
 
 

@@ -16,9 +16,9 @@ Turns flows flagged by a detection model into short, grounded alerts. The LLM do
 
 * **Model output:** predicted class, confidence, runner-up class and its probability.
 * **Flow:** anonymized host labels, destination port, protocol, bytes and packets in each direction, duration, TCP flags.
-* **Window context (5,000 flows):** source flow count, distinct destination hosts and ports, destination flow count and distinct sources, flows with the same source and destination port, and flagged flow counts.
+* **Window context (5,000 flows):** source flow count, distinct destination hosts and ports, destination flow count and distinct sources, flows with the same source, destination host and port, and flagged flow counts.
 
-Ground-truth labels, IP addresses and alert IDs are never sent.
+Ground-truth labels, IP addresses and alert IDs are never sent. Duration is sent as unavailable when it is 0 or a NetFlow timer wraparound value (4,290,000 ms or more). In the UNSW test split every flow is one of these two cases.
 
 ## Alert selection
 
@@ -26,7 +26,7 @@ For each predicted attack class, the run samples up to `--per-cell` flows from e
 
 ## Evaluation
 
-`grounding.py` flags numbers absent from the input, attack classes other than the predicted or runner-up class, and speculative terms such as malware or attacker. These flags only direct attention. A person scores `manual_factually_consistent` and `manual_clear` (`y` or `n`) in `review_sheet.csv`.
+`grounding.py` flags numbers absent from the input, attack classes other than the predicted or runner-up class, speculative terms such as malware or attacker, time words the window cannot support, judgment words, spelled-out numbers, a wrong opening, and missing uncertainty below 60% confidence. These flags only direct attention. A person scores `manual_factually_consistent` and `manual_clear` (`y` or `n`) in `review_sheet.csv`.
 
 Alerts describe evidence consistent with a prediction. They are not attributions of what the model actually used.
 

@@ -59,7 +59,7 @@ def bundle(tmp_path: Path) -> dict:
         [80, 6, 60, 0, 1, 0, 0, 2],
         [443, 17, 100, 200, 2, 3, 9, 0],
         [443, 6, 70, 0, 1, 0, 1, 4],
-        [443, 6, 800, 900, 8, 9, 50, 27],
+        [443, 6, 800, 900, 8, 9, 4294951, 27],
         [8080, 1, 64, 64, 1, 1, 2, 0],
         [80, 6, 500, 600, 5, 6, 70, 24],
     ], dtype=np.float64)
@@ -127,6 +127,13 @@ def test_restores_readable_flow_values(bundle):
     assert (flow["source_host"], flow["destination_host"]) == ("host_0", "host_2")
 
 
+def test_unreliable_durations_are_reported_as_unavailable(bundle):
+    records = evidence_for(bundle, [1, 2, 5])
+    assert records[0]["flow"]["duration_ms"] == pytest.approx(12345, rel=1e-4)
+    assert records[1]["flow"]["duration_ms"] is None  # recorded as 0
+    assert records[2]["flow"]["duration_ms"] is None  # timer wraparound
+
+
 def test_window_statistics_match_hand_counts(bundle):
     context = evidence_for(bundle, [1])[0]["window_context"]
     assert context == {
@@ -136,13 +143,14 @@ def test_window_statistics_match_hand_counts(bundle):
         "source_distinct_destination_ports": 3,
         "destination_incoming_flows": 1,
         "destination_distinct_source_hosts": 1,
-        "flows_same_source_and_destination_port": 2,
-        "source_flows_flagged_malicious": 4,
-        "flows_flagged_malicious_in_window": 4,
+        "flows_from_this_source_to_this_host_on_this_port": 1,
+        "flagged_flows_from_this_source": 4,
+        "flagged_flows_from_all_sources": 4,
     }
     fan_in = evidence_for(bundle, [4])[0]["window_context"]
     assert fan_in["destination_incoming_flows"] == 4
     assert fan_in["destination_distinct_source_hosts"] == 3
+    assert fan_in["flows_from_this_source_to_this_host_on_this_port"] == 2
 
 
 def test_model_output_uses_probabilities(bundle):
@@ -226,12 +234,34 @@ def test_grounded_alert_passes():
         ("Flagged as DoS (87%). 45% of its flows were flagged.", "unsupported_numbers", ["45"]),
         ("Flagged as DoS, possibly Backdoor activity.", "other_classes_named", ["Backdoor"]),
         ("Flagged as DoS. The attacker used port 80.", "speculative_terms", ["attacker"]),
+        ("Flagged as DoS (87%). Its 240 flows were previously flagged.", "time_words", ["previously"]),
+        ("Flagged as DoS (87%). The window shows a high concentration.", "judgment_terms", ["high"]),
+        ("Flagged as DoS (87%). It had three flows.", "spelled_numbers", ["three"]),
+        ("DoS (87%). The model flagged port 80.", "format_issues", ["wrong_opening"]),
+        ("Flagged as DoS (87% confidence) because port 80 was used.", "judgment_terms", ["because"]),
+        ("Flagged as DoS (87% confidence). Its source_outgoing_flows is 240.", "format_issues", ["field_name_in_text"]),
     ],
 )
 def test_ungrounded_alerts_are_flagged(text, field, expected):
     result = check_alert(text, base_evidence(), CLASSES)
     assert result[field] == expected
     assert result["passed"] is False
+
+
+def test_low_confidence_must_be_called_uncertain():
+    evidence = base_evidence()
+    evidence["model_output"]["confidence_percent"] = 40
+    plain = "Flagged as DoS (40% confidence)."
+    assert check_alert(plain, evidence, CLASSES)["format_issues"] == ["missing_uncertainty"]
+    hedged = "Flagged as DoS (40% confidence). The category is uncertain; the runner-up class is Exploits."
+    assert check_alert(hedged, evidence, CLASSES)["format_issues"] == []
+
+
+def test_thin_space_digit_groups_are_read_as_one_number():
+    evidence = base_evidence()
+    evidence["window_context"]["flows_in_window"] = 5000
+    text = "Flagged as DoS (87%). It was among 5\u202f000 flows."
+    assert check_alert(text, evidence, CLASSES)["unsupported_numbers"] == []
 
 
 def test_host_labels_are_not_treated_as_numbers():
@@ -267,7 +297,10 @@ class FakeGateway(BaseHTTPRequestHandler):
             return
         record = json.loads(body["messages"][1]["content"])
         output = record["model_output"]
-        text = (f"Flagged as {output['predicted_class']} ({output['confidence_percent']}% confidence). "
+        hedge = ""
+        if output["confidence_percent"] < 60:
+            hedge = f" The category is uncertain; the runner-up class is {output['runner_up_class']}."
+        text = (f"Flagged as {output['predicted_class']} ({output['confidence_percent']}% confidence).{hedge} "
                 f"The model flagged {record['flow']['source_host']}, which is consistent with the prediction.")
         payload = json.dumps({"choices": [{"message": {"content": text}}]}).encode()
         self.send_response(200)

@@ -14,6 +14,16 @@ from pathlib import Path
 from typing import Any, Iterable
 
 NUMBER = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?")
+DIGIT_GROUP_SPACE = re.compile(r"(?<=\d)[\u00a0\u2009\u202f](?=\d{3}\b)")
+TIME_WORDS = re.compile(r"\b(previously|earlier|recent|recently|already|prior)\b", re.I)
+JUDGMENT_TERMS = re.compile(
+    r"\b(high|many|large|heavy|short|minimal|unusual|suspicious|typical|typically|sole|because|due to|caused by)\b", re.I
+)
+SPELLED_NUMBERS = re.compile(
+    r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b(?![-\u2010\u2011]|\s+(?:way|of)\b)", re.I
+)
+FIELD_NAME = re.compile(r"\b[a-z]+(?:_[a-z]+){2,}\b")
+UNCERTAIN_BELOW_PERCENT = 60
 SPECULATIVE_TERMS = (
     "attacker", "adversary", "malware", "ransomware", "botnet", "payload", "cve",
     "vulnerabilit", "exfiltrat", "credential", "command and control", "compromis",
@@ -41,7 +51,8 @@ def _numbers_in(value: Any) -> Iterable[float]:
 
 def check_alert(text: str, evidence: dict[str, Any], class_names: list[str]) -> dict[str, Any]:
     allowed = set(_numbers_in([evidence["model_output"], evidence["flow"], evidence["window_context"]]))
-    unsupported = [n for n in NUMBER.findall(text) if _as_number(n.rstrip(",")) not in allowed]
+    normalized = DIGIT_GROUP_SPACE.sub("", text)
+    unsupported = [n for n in NUMBER.findall(normalized) if _as_number(n.rstrip(",")) not in allowed]
 
     output = evidence["model_output"]
     permitted = {output["predicted_class"], output.get("runner_up_class")}
@@ -52,12 +63,37 @@ def check_alert(text: str, evidence: dict[str, Any], class_names: list[str]) -> 
     lowered = text.lower()
     speculative = [term for term in SPECULATIVE_TERMS if term in lowered]
     named = output["predicted_class"].lower() in lowered
+
+    format_issues = []
+    confidence = output["confidence_percent"]
+    opening = f"Flagged as {output['predicted_class']}"
+    if confidence is not None:
+        opening += f" ({confidence}% confidence)."
+    if not text.startswith(opening):
+        format_issues.append("wrong_opening")
+    if FIELD_NAME.search(text):
+        format_issues.append("field_name_in_text")
+    if confidence is not None and confidence < UNCERTAIN_BELOW_PERCENT:
+        runner_up = output.get("runner_up_class") or ""
+        if "uncertain" not in lowered or runner_up.lower() not in lowered:
+            format_issues.append("missing_uncertainty")
+
+    time_words = sorted({m.lower() for m in TIME_WORDS.findall(text)})
+    judgment_terms = sorted({m.lower() for m in JUDGMENT_TERMS.findall(text)})
+    spelled_numbers = sorted({m.lower() for m in SPELLED_NUMBERS.findall(text)})
     return {
         "unsupported_numbers": unsupported,
         "other_classes_named": other_classes,
         "speculative_terms": speculative,
         "predicted_class_named": named,
-        "passed": named and not (unsupported or other_classes or speculative),
+        "time_words": time_words,
+        "judgment_terms": judgment_terms,
+        "spelled_numbers": spelled_numbers,
+        "format_issues": format_issues,
+        "passed": named and not (
+            unsupported or other_classes or speculative or time_words
+            or judgment_terms or spelled_numbers or format_issues
+        ),
     }
 
 
@@ -65,7 +101,7 @@ def write_review_sheet(path: Path, rows: list[dict[str, Any]]) -> None:
     columns = [
         "alert_id", "true_class", "predicted_class", "confidence_percent", "outcome",
         "alert_text", "auto_passed", "auto_unsupported_numbers", "auto_other_classes",
-        "auto_speculative_terms", *MANUAL_COLUMNS, "evidence_json",
+        "auto_speculative_terms", "auto_wording_flags", *MANUAL_COLUMNS, "evidence_json",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
