@@ -45,3 +45,13 @@ venv/
 *.zip
 
 data/
+
+# Large datasets and processed graph files
+graph_data_bundle/
+graph_data_bundle.zip
+
+# Generated outputs
+results/
+models/
+*.pt
+*.pth

@@ -1,0 +1,18 @@
+{
+  "experiment_name": "ablation_class_weight_xgb",
+  "model": "xgb",
+  "dataset": "unsw",
+  "max_samples": 50000,
+  "seeds": [42],
+  "output_root": "results/experiments",
+  "base_params": {
+    "n_estimators": 25,
+    "max_depth": 5,
+    "learning_rate": 0.1,
+    "workers": 4,
+    "class_weight": "balanced"
+  },
+  "ablations": {
+    "class_weight": ["balanced", "none"]
+  }
+}

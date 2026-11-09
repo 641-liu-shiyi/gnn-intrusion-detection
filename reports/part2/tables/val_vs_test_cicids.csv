@@ -1,0 +1,7 @@
+Model,Split,Accuracy,Macro_F1,Weighted_F1,Binary_Precision,Binary_Recall,Binary_F1,Binary_AP
+Random Forest,Validation,0.9701,0.0657,0.9558,0.0463,0.0007,0.0013,0.0822
+Random Forest,Held-Out Test,0.9560,0.0652,0.9349,0.0484,0.0004,0.0008,0.4960
+XGBoost,Validation,0.9636,0.0656,0.9548,0.3977,0.1544,0.2225,0.1066
+XGBoost,Held-Out Test,0.9493,0.0650,0.9331,0.3186,0.0757,0.1223,0.5157
+PyTorch MLP,Validation,0.5766,0.0490,0.7139,0.0221,0.3017,0.0412,0.0301
+PyTorch MLP,Held-Out Test,0.5891,0.0505,0.7248,0.0858,0.7908,0.1549,0.3439

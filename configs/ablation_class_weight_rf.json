@@ -1,0 +1,17 @@
+{
+  "experiment_name": "ablation_class_weight_rf",
+  "model": "rf",
+  "dataset": "unsw",
+  "max_samples": 50000,
+  "seeds": [42],
+  "output_root": "results/experiments",
+  "base_params": {
+    "n_estimators": 20,
+    "max_depth": 12,
+    "workers": 4,
+    "class_weight": "balanced_subsample"
+  },
+  "ablations": {
+    "class_weight": ["balanced_subsample", "none"]
+  }
+}

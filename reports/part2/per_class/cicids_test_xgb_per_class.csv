@@ -1,0 +1,16 @@
+class,precision,recall,f1,support
+Benign,0.9593,0.9926,0.9757,3725104
+Bot,0.0000,0.0000,0.0000,111460
+Brute_Force_-Web,0.0000,0.0000,0.0000,0
+Brute_Force_-XSS,0.0000,0.0000,0.0000,0
+DDOS_attack-HOIC,0.0000,0.0000,0.0000,0
+DDOS_attack-LOIC-UDP,0.0000,0.0000,0.0000,0
+DDoS_attacks-LOIC-HTTP,0.0000,0.0000,0.0000,0
+DoS_attacks-GoldenEye,0.0000,0.0000,0.0000,0
+DoS_attacks-Hulk,0.0000,0.0000,0.0000,0
+DoS_attacks-SlowHTTPTest,0.0000,0.0000,0.0000,0
+DoS_attacks-Slowloris,0.0000,0.0000,0.0000,0
+FTP-BruteForce,0.0000,0.0000,0.0000,0
+Infilteration,0.0000,0.0000,0.0000,58436
+SQL_Injection,0.0000,0.0000,0.0000,0
+SSH-Bruteforce,0.0000,0.0000,0.0000,0
