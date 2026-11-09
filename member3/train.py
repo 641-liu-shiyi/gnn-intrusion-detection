@@ -16,6 +16,8 @@ from torch_geometric.loader import DataLoader
 
 from model import EGraphSAGE
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # repo root, for src.eval.metrics
+
 # Brief: IPs, timestamps and IP-header TTL must never enter the feature matrix.
 # DNS_TTL_ANSWER (DNS cache lifetime) and FLOW_DURATION_* are allowed (decided 2026-10-09).
 FORBIDDEN_SUBSTR = ("ADDR", "FLOW_START", "FLOW_END")
@@ -95,12 +97,18 @@ def run_epoch(model, loader, loss_fn, device, opt=None):
     return total / n, torch.cat(ys).numpy(), torch.cat(ps).numpy()
 
 
-def load_evaluator(cfg):
-    """Member 2's shared metrics module. Never reimplemented here."""
+def load_evaluator(cfg, data_cfg=None):
+    """Member 2's shared metrics module. Never reimplemented here.
+    With "with_class_names": true the function is called as fn(y, p, class_names, benign_id=...),
+    matching src.eval.metrics.compute_metrics; class names come from the graph folder."""
     if not cfg.get("module"):
         print("WARNING: no eval module configured -> loss only, numbers NOT reportable.")
         return None
-    return getattr(importlib.import_module(cfg["module"]), cfg["function"])
+    fn = getattr(importlib.import_module(cfg["module"]), cfg["function"])
+    if not cfg.get("with_class_names"):
+        return fn
+    names = json.loads((Path(data_cfg["graph_dir"]) / "class_names.json").read_text())
+    return lambda y, p: fn(y, p, names, benign_id=data_cfg["benign_class"])
 
 
 def main(config_path, seed=None):
@@ -146,9 +154,9 @@ def main(config_path, seed=None):
     train_loader = DataLoader(train, batch_size=t["batch_graphs"], shuffle=True, generator=g)
     val_loader = DataLoader(val, batch_size=t["batch_graphs"])
     test_loader = DataLoader(test, batch_size=t["batch_graphs"])
-    evaluate = load_evaluator(cfg.get("eval", {}))
+    evaluate = load_evaluator(cfg.get("eval", {}), cfg["data"])
 
-    # Model selection on val loss until Member 2's module is wired in.
+    # Model selection on val loss (comparable across runs that share a loss); val metrics are logged.
     best, bad_epochs = float("inf"), 0
     with open(run_dir / "epochs.jsonl", "w") as log:
         for epoch in range(1, t["epochs"] + 1):

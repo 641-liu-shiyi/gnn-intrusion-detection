@@ -22,7 +22,7 @@ C = cfg["num_classes"]
 names = json.loads(Path(sys.argv[2]).read_text()) if len(sys.argv) > 2 else [str(i) for i in range(C)]
 train_counts = res["train_class_counts"]
 
-evaluate = load_evaluator(cfg.get("eval", {}))
+evaluate = load_evaluator(cfg.get("eval", {}), cfg["data"])
 if evaluate:
     print("Member 2 metrics (test):", json.dumps(evaluate(yt, yp), default=float, indent=2))
 

@@ -26,6 +26,7 @@ with tempfile.TemporaryDirectory() as tmp:
                      edge_attr=rng.normal(size=(200, 37)).astype(np.float32),
                      edge_label=rng.integers(0, 10, 200),
                      num_nodes=20)
+    (gdir / "class_names.json").write_text(json.dumps([f"C{i}" for i in range(10)]))
 
     # Guard must reject TTL features.
     joblib.dump(["IN_BYTES", "MIN_TTL"], tmp / "bad.joblib")
@@ -35,7 +36,9 @@ with tempfile.TemporaryDirectory() as tmp:
     except SystemExit:
         pass
 
-    joblib.dump(["IN_BYTES", "OUT_BYTES"], tmp / "ok.joblib")
+    joblib.dump([f"F{i}" for i in range(37)], tmp / "ok.joblib")
+    from sklearn.preprocessing import StandardScaler  # noqa: E402
+    joblib.dump(StandardScaler().fit(rng.normal(size=(100, 37))), tmp / "scaler.joblib")
     for aggr in ["mean", "attention"]:
         cfg = json.loads((Path(__file__).parent / "configs" / f"unsw_egraphsage_{aggr}.json").read_text())
         cfg["out_dir"] = str(tmp / "runs")
@@ -87,23 +90,23 @@ with tempfile.TemporaryDirectory() as tmp:
                          capture_output=True, text=True)
     assert out.returncode == 0 and "confusion matrix saved" in out.stdout, out.stdout + out.stderr
 
-    # Transfer (option C): runs, refuses to overwrite, refuses mismatched feature lists.
+    # Transfer (option C): runs, refuses to overwrite, fails on feature names the source needs but the target lacks.
     tgt = json.loads((tmp / "smoke_mean.json").read_text())
     (tmp / "smoke_target.json").write_text(json.dumps(tgt))
     run1 = str(tmp / "runs" / "smoke_mean_seed1")
     t = [sys.executable, str(here / "transfer.py"), run1]
     out = subprocess.run(t + [str(tmp / "smoke_target.json")], capture_output=True, text=True)
     assert out.returncode == 0, out.stdout + out.stderr
-    tr = json.loads((tmp / "runs" / "smoke_mean_seed1" / "transfer_to_smoke_target.json").read_text())
+    tr = json.loads((tmp / "runs" / "smoke_mean_seed1" / "transfer_to_smoke_target_val.json").read_text())
     assert {"in_domain", "cross_domain"} <= tr.keys()
     assert sum(n for _, n in tr["cross_domain"]["flagged_by_true_class"].values()) == tr["cross_domain"]["edges"]
     out = subprocess.run(t + [str(tmp / "smoke_target.json")], capture_output=True, text=True)
     assert "refusing to overwrite" in out.stderr, out.stderr
-    joblib.dump(["IN_BYTES", "IN_PKTS"], tmp / "other.joblib")
+    joblib.dump([f"G{i}" for i in range(37)], tmp / "other.joblib")
     tgt["data"]["feature_names"] = str(tmp / "other.joblib")
     (tmp / "smoke_target2.json").write_text(json.dumps(tgt))
     out = subprocess.run(t + [str(tmp / "smoke_target2.json")], capture_output=True, text=True)
-    assert "feature lists differ" in out.stderr, out.stderr
+    assert out.returncode != 0 and "not present in target feature set" in out.stderr, out.stderr
 
     # Attention weights sum to 1 per node: with identical incoming messages,
     # attention must reproduce mean exactly (any normalised weighting of equal vectors does).

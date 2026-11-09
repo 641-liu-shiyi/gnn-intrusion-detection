@@ -26,7 +26,8 @@
     "class_weighting": "inverse"
   },
   "eval": {
-    "module": null,
-    "function": null
+    "module": "src.eval.metrics",
+    "function": "compute_metrics",
+    "with_class_names": true
   }
 }
