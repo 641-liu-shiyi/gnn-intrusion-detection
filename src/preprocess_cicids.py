@@ -6,8 +6,8 @@ import joblib
 
 root = Path(__file__).resolve().parent.parent
 
-data_dir = root / "data" / "processed_cicids"
-out_dir = root / "data" / "features_cicids"
+data_dir = root / "data" / "processed_cicids_episode"
+out_dir = root / "data" / "features_cicids_episode"
 unsw_feature_dir = root / "data" / "features"
 
 out_dir.mkdir(parents=True, exist_ok=True)
@@ -108,12 +108,29 @@ joblib.dump(
     out_dir / "feature_names.joblib"
 )
 
-# Current chronological v3 split sizes
-sizes = {
-    "train": 13640938,
-    "val": 1948706,
-    "test": 3897411,
-}
+
+# Automatically calculate the new split sizes
+
+sizes = {}
+
+for name in ["train", "val", "test"]:
+    path = data_dir / f"{name}.csv"
+
+    if not path.exists():
+        raise FileNotFoundError(path)
+
+    with open(path, "rb") as f:
+        sizes[name] = sum(
+            block.count(b"\n")
+            for block in iter(
+                lambda: f.read(8 * 1024 * 1024),
+                b""
+            )
+        ) - 1
+
+print("\nNew dataset sizes:")
+for name, size in sizes.items():
+    print(f"{name}: {size:,}")
 
 # --------------------------------------------------
 # Transform each split
