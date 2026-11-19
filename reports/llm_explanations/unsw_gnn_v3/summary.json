@@ -1,0 +1,27 @@
+{
+  "dataset": "unsw",
+  "split": "test",
+  "model": "gpt-oss-120b",
+  "prompt_version": "v3",
+  "per_cell": 2,
+  "seed": 42,
+  "automated_checks": {
+    "alerts": 54,
+    "auto_passed": 54,
+    "by_outcome": {
+      "correct_class": {
+        "alerts": 18,
+        "auto_passed": 18
+      },
+      "false_positive": {
+        "alerts": 18,
+        "auto_passed": 18
+      },
+      "wrong_attack_class": {
+        "alerts": 18,
+        "auto_passed": 18
+      }
+    }
+  },
+  "failures": []
+}

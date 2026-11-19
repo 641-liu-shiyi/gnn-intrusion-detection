@@ -7,9 +7,11 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
 
-data_dir = root / "data" / "processed_cicids"
-feature_dir = root / "data" / "features_cicids"
-graph_dir = root / "data" / "graphs_cicids"
+
+data_dir = root / "data" / "processed_cicids_episode"
+feature_dir = root / "data" / "features_cicids_episode"
+graph_dir = root / "data" / "graphs_cicids_episode"
+
 
 graph_dir.mkdir(parents=True, exist_ok=True)
 
