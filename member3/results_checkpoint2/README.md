@@ -16,12 +16,13 @@ Config: `member3/configs/unsw_final.json` (reproduce: `python member3/train.py m
 |---|---|---|---|---|
 | E-GraphSAGE as published (classifier on `[h_u, h_v]`) | 0.282 ± 0.008 | 0.940 | 0.931 | 0.874 |
 | **E-GraphSAGE final** (flow features in classifier, sqrt weighting) | **0.511 ± 0.003** | **0.971** | **0.969** | **0.953** |
-| Random Forest (Member 2) | 0.605 | 0.979 | 0.976 | 0.948 |
-| XGBoost (Member 2) | 0.652 | 0.982 | 0.978 | 0.952 |
-| MLP (Member 2) | 0.508 | 0.973 | 0.967 | 0.910 |
+| Random Forest (Member 2) | 0.614 | 0.977 | 0.973 | 0.953 |
+| XGBoost (Member 2) | 0.651 | 0.979 | 0.975 | 0.955 |
+| MLP (Member 2) | 0.524 | 0.970 | 0.965 | 0.926 |
 
-The final GNN matches the best baseline on benign-vs-attack detection (binary F1 0.953 vs 0.952) but trails the
-tree ensembles on attack-type classification (macro F1 0.511 vs 0.652).
+Baseline rows: held-out test, `reports/part2/tables/final_test_summary.csv`. The final GNN is on par with
+Random Forest on benign-vs-attack detection (binary F1 0.953) and just below XGBoost (0.955), but trails the
+tree ensembles on attack-type classification (macro F1 0.511 vs 0.651).
 
 ## Class weighting × classifier input (UNSW, 3 seeds)
 
@@ -89,7 +90,9 @@ attack class seen in training. CIC-IDS2018 results need a split in which every a
 | CICIDS → UNSW | val | 0.319 | 0.027 | 0.266 | 0.049 | 0.061 |
 | CICIDS → UNSW | test | 0.392 | 0.030 | 0.231 | 0.053 | 0.069 |
 
-In-domain binary F1 of the same UNSW model: 0.947 (test). Transfer collapses in both directions, as for the
-baselines (binary F1 0.04–0.12). UNSW → CICIDS is somewhat higher for the GNN than for the baselines
-(0.088–0.131 vs 0.053–0.059); CICIDS → UNSW is limited by the CICIDS model itself (see limitation above).
+In-domain binary F1 of the same UNSW model: 0.940 (val) / 0.947 (test). Transfer collapses in both directions,
+as for the baselines. The baselines' cross-dataset table (`docs/PART2_FINAL_RESULTS.md` §10) uses the validation
+split, so compare the val rows: UNSW → CICIDS GNN 0.131 vs RF 0.059 / XGBoost 0.053 / MLP 0.053;
+CICIDS → UNSW GNN 0.049 vs RF 0.000 / XGBoost 0.093 / MLP 0.125, limited by the CICIDS model itself
+(see limitation above).
 CICIDS prediction exports (>100 MB) are kept on the server, not in the repository.
