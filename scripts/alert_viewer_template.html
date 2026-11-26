@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Explainable Intrusion Alerts</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #161a20; --panel2: #1c2129; --line: #2a313b;
+    --text: #e6e9ee; --muted: #9aa4b2; --faint: #6b7584;
+    --accent: #5eb3ff; --accent-soft: rgba(94,179,255,.16);
+    --ok: #46c98b; --warn: #f2b84b; --bad: #ff6b5e;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header { padding: 16px 24px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -.01em; }
+  header .sub { color: var(--muted); font-size: 14px; }
+  .stats { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); }
+  .chip b { color: var(--text); font-weight: 600; }
+  .chip.okchip b { color: var(--ok); }
+
+  .pipeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 12px 24px; border-bottom: 1px solid var(--line); }
+  .step { display: flex; gap: 10px; align-items: flex-start; padding: 0 14px; position: relative; }
+  .step:not(:last-child)::after { content: "→"; position: absolute; right: -6px; top: 2px; color: var(--faint); font-size: 18px; }
+  .num-badge { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+  .step b { display: block; font-size: 14px; }
+  .step span { color: var(--muted); font-size: 12.5px; line-height: 1.35; display: block; }
+
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: 330px 1fr; }
+  aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .filters { padding: 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 2px; }
+  .seg button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 12.5px; padding: 5px 6px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  .seg button.on { background: var(--panel2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+  select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; }
+  .list { overflow-y: auto; flex: 1; padding: 6px 8px 16px; }
+  .group-h { color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; padding: 10px 8px 4px; }
+  .item { display: block; width: 100%; text-align: left; background: none; border: 1px solid transparent; color: inherit; font: inherit; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .item:hover { background: var(--panel); }
+  .item.on { background: var(--panel2); border-color: var(--line); box-shadow: inset 3px 0 0 var(--accent); }
+  .item .top { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; font-size: 14px; }
+  .item .top .pct { font-family: var(--mono); font-weight: 500; color: var(--muted); font-size: 13px; }
+  .item .bot { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12.5px; font-family: var(--mono); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: 1px; }
+  .hint { color: var(--faint); font-size: 12px; padding: 8px 12px; border-top: 1px solid var(--line); }
+  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--muted); }
+
+  .detail { overflow-y: auto; padding: 16px 24px 28px; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr); grid-template-areas: "v v" "g e" "a e" "c e" "f f"; gap: 14px 16px; align-content: start; }
+  .detail > .card { align-self: start; }
+  .a-v { grid-area: v; } .a-g { grid-area: g; } .a-e { grid-area: e; } .a-a { grid-area: a; } .a-c { grid-area: c; } .a-f { grid-area: f; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; display: flex; align-items: center; gap: 8px; }
+  .card h2 .num-badge { width: 20px; height: 20px; font-size: 11.5px; }
+  .card h2 .aside { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); font-size: 12px; }
+  .span2 { grid-column: 1 / -1; }
+
+  .verdict { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 20px; align-items: center; }
+  .verdict .label { color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  .verdict .big { font-size: 26px; font-weight: 700; letter-spacing: -.01em; }
+  .bar { height: 8px; background: var(--panel2); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; border-radius: 99px; }
+  .mid { font-size: 18px; font-weight: 600; }
+  .mono { font-family: var(--mono); }
+  .badge { display: inline-block; font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; margin-top: 4px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12.5px; }
+
+  svg text { font-family: Inter, system-ui, sans-serif; }
+  .graph-cap { color: var(--faint); font-size: 12px; margin-top: 4px; }
+
+  table.ev { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.ev th { text-align: left; color: var(--faint); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; padding: 10px 6px 4px; }
+  table.ev tr.first th { padding-top: 0; }
+  table.ev td { padding: 2px 6px; border-top: 1px solid rgba(42,49,59,.6); }
+  table.ev td:last-child { text-align: right; font-family: var(--mono); white-space: nowrap; }
+  table.ev tr.hl td { background: var(--accent-soft); }
+  table.ev tr.hl td:last-child { color: var(--accent); }
+  table.ev tr[data-v] { cursor: default; }
+
+  .alert-text { font-size: 17px; line-height: 1.65; margin: 0; }
+  .alert-text .n { font-family: var(--mono); font-size: 15.5px; color: var(--accent); background: rgba(94,179,255,.08); border-bottom: 1px dashed rgba(94,179,255,.5); border-radius: 3px; padding: 0 1px; cursor: help; }
+  .alert-text .n.hl { background: var(--accent); color: #0b0f14; }
+  .alert-text .n.orphan { color: var(--bad); border-color: var(--bad); }
+  .src-note { margin-top: 10px; font-size: 12.5px; color: var(--muted); min-height: 19px; }
+
+  ul.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  ul.checks li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
+  ul.checks .ic { flex: none; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; margin-top: 2px; }
+  ul.checks .ic.ok { background: rgba(70,201,139,.18); color: var(--ok); }
+  ul.checks .ic.no { background: rgba(255,107,94,.18); color: var(--bad); }
+  ul.checks .why { color: var(--bad); font-size: 12.5px; display: block; }
+  .overall { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .foot { color: var(--faint); font-size: 12.5px; line-height: 1.45; }
+  .foot p { margin: 0 0 4px; }
+
+  @media (max-width: 1150px) {
+    .detail { grid-template-columns: 1fr; grid-template-areas: "v" "g" "a" "c" "e" "f"; }
+    .pipeline { grid-template-columns: 1fr 1fr; row-gap: 10px; }
+    .step:nth-child(2)::after { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Explainable intrusion alerts</h1>
+    <div class="sub" id="sub"></div>
+  </div>
+  <div class="stats" id="stats"></div>
+</header>
+
+<section class="pipeline" aria-label="How an alert is produced">
+  <div class="step"><div class="num-badge">1</div><div><b>The GNN flags a flow</b><span>Each flow is an edge in a graph of 5,000 flows; the model classifies it.</span></div></div>
+  <div class="step"><div class="num-badge">2</div><div><b>Evidence comes from the graph</b><span>The flow's fields plus counts for its source and destination hosts.</span></div></div>
+  <div class="step"><div class="num-badge">3</div><div><b>The LLM writes the alert</b><span id="llm-step">The evidence is its only source of facts.</span></div></div>
+  <div class="step"><div class="num-badge">4</div><div><b>Checks verify the alert</b><span>Every number and class in it must trace back to the evidence.</span></div></div>
+</section>
+
+<main>
+  <aside>
+    <div class="filters">
+      <div class="seg" id="seg" role="tablist"></div>
+      <select id="cls" aria-label="Filter by predicted class"></select>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="hint"><kbd>↑</kbd> <kbd>↓</kbd> move between alerts · hover a number in the alert to see its source</div>
+  </aside>
+  <section class="detail" id="detail"></section>
+</main>
+
+<script>
+const DATA = __ALERT_DATA__;
+
+const OUTCOMES = {
+  correct_class:      { label: "Correct",            long: "Correct class",      color: "var(--ok)",   note: "The GNN predicted the true attack class." },
+  wrong_attack_class: { label: "Wrong class",        long: "Wrong attack class", color: "var(--warn)", note: "A real attack, but the GNN picked a different class." },
+  false_positive:     { label: "False positive",     long: "False positive",     color: "var(--bad)",  note: "Benign traffic the GNN flagged as an attack." },
+};
+const FIELD_LABELS = {
+  predicted_class: "Predicted class",
+  confidence_percent: "Confidence (%)",
+  runner_up_class: "Runner-up class",
+  runner_up_percent: "Runner-up probability (%)",
+  source_host: "Source host",
+  destination_host: "Destination host",
+  destination_port: "Destination port",
+  protocol: "Protocol",
+  bytes_source_to_destination: "Bytes sent to destination",
+  bytes_destination_to_source: "Bytes sent back",
+  packets_source_to_destination: "Packets sent to destination",
+  packets_destination_to_source: "Packets sent back",
+  duration_ms: "Duration",
+  tcp_flags_seen: "TCP flags",
+  flows_in_window: "Flows in the window",
+  source_outgoing_flows: "Flows sent by the source",
+  source_distinct_destination_hosts: "Hosts the source contacted",
+  source_distinct_destination_ports: "Ports the source targeted",
+  destination_incoming_flows: "Flows received by the destination",
+  destination_distinct_source_hosts: "Hosts that contacted the destination",
+  flows_from_this_source_to_this_host_on_this_port: "Flows from source to this host and port",
+  flagged_flows_from_this_source: "Flagged flows from the source",
+  flagged_flows_from_all_sources: "Flagged flows from all hosts",
+};
+const SECTIONS = [["model_output", "Model output"], ["flow", "This flow"], ["window_context", "Its 5,000-flow window"]];
+const NUMBER = /(?<![\w.])\d[\d,]*(?:\.\d+)?/g;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const toNum = (s) => Number(String(s).replace(/,/g, ""));
+const fmt = (n) => (typeof n === "number" ? n.toLocaleString("en-US") : n);
+
+let filterOutcome = "all", filterClass = "all", visible = [], current = null, pinned = null;
+
+function header() {
+  const n = DATA.alerts.length;
+  const classes = new Set(DATA.alerts.map((a) => a.evidence.model_output.predicted_class));
+  $("sub").textContent = `${DATA.dataset} ${DATA.split} split · GNN detection with LLM-written explanations`;
+  $("llm-step").textContent = `${DATA.model}, fixed prompt ${DATA.prompt_version}; the evidence is its only source of facts.`;
+  const passed = DATA.passed ?? DATA.alerts.filter((a) => a.checks.passed).length;
+  $("stats").innerHTML = [
+    `<span class="chip"><b>${n}</b> alerts</span>`,
+    `<span class="chip"><b>${classes.size}</b> predicted attack classes</span>`,
+    `<span class="chip okchip"><b>${passed}/${n}</b> pass automated checks</span>`,
+  ].join("");
+}
+
+function filters() {
+  const counts = { all: DATA.alerts.length };
+  for (const a of DATA.alerts) counts[a.outcome] = (counts[a.outcome] || 0) + 1;
+  const keys = ["all", ...Object.keys(OUTCOMES)];
+  $("seg").innerHTML = keys.map((k) =>
+    `<button role="tab" data-k="${k}" class="${k === filterOutcome ? "on" : ""}">${k === "all" ? "All" : OUTCOMES[k].label} ${counts[k] || 0}</button>`
+  ).join("");
+  $("seg").onclick = (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    filterOutcome = b.dataset.k; filters(); list(true);
+  };
+  const classes = [...new Set(DATA.alerts.map((a) => a.evidence.model_output.predicted_class))].sort();
+  $("cls").innerHTML = `<option value="all">All predicted classes</option>` +
+    classes.map((c) => `<option ${c === filterClass ? "selected" : ""}>${esc(c)}</option>`).join("");
+  $("cls").onchange = (e) => { filterClass = e.target.value; list(true); };
+}
+
+function list(reselect) {
+  visible = DATA.alerts.filter((a) =>
+    (filterOutcome === "all" || a.outcome === filterOutcome) &&
+    (filterClass === "all" || a.evidence.model_output.predicted_class === filterClass));
+  let html = "", lastGroup = null;
+  for (const a of visible) {
+    if (filterOutcome === "all" && a.outcome !== lastGroup) {
+      lastGroup = a.outcome;
+      html += `<div class="group-h">${OUTCOMES[a.outcome]?.long ?? a.outcome}</div>`;
+    }
+    const m = a.evidence.model_output, f = a.evidence.flow;
+    html += `<button class="item${current && a.id === current.id ? " on" : ""}" data-id="${esc(a.id)}">
+      <div class="top"><span><i class="dot" style="background:${OUTCOMES[a.outcome]?.color}"></i>${esc(m.predicted_class)}</span><span class="pct">${m.confidence_percent ?? "–"}%</span></div>
+      <div class="bot"><span>${esc(f.source_host)} → ${esc(f.destination_host)}</span><span>:${f.destination_port} ${esc(f.protocol)}</span></div>
+    </button>`;
+  }
+  $("list").innerHTML = html || `<div class="group-h">No alerts match</div>`;
+  $("list").onclick = (e) => { const b = e.target.closest(".item"); if (b) select(b.dataset.id); };
+  if (reselect && visible.length && !visible.some((a) => a.id === current?.id)) select(visible[0].id);
+}
+
+function select(id) {
+  current = DATA.alerts.find((a) => a.id === id);
+  pinned = null;
+  document.querySelectorAll(".item").forEach((el) => el.classList.toggle("on", el.dataset.id === id));
+  document.querySelector(".item.on")?.scrollIntoView({ block: "nearest" });
+  detail(current);
+}
+
+function graphSvg(ev) {
+  const f = ev.flow, w = ev.window_context;
+  const W = 600, H = 262, S = { x: 180, y: 108 }, D = { x: 420, y: 108 }, R = 28, r = 9;
+  const otherDst = Math.max(0, (w.source_distinct_destination_hosts ?? 1) - 1);
+  const otherSrc = Math.max(0, (w.destination_distinct_source_hosts ?? 1) - 1);
+  const same = w.flows_from_this_source_to_this_host_on_this_port ?? 1;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Neighborhood of the flagged flow">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4a5563"/></marker>
+      <marker id="ahA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff6b5e"/></marker>
+    </defs>`;
+  const fan = (center, count, fromAngle, toAngle, outward, label) => {
+    const shown = Math.min(count, 6), rad = 100;
+    for (let i = 0; i < shown; i++) {
+      const t = shown === 1 ? 0.5 : i / (shown - 1);
+      const ang = (fromAngle + (toAngle - fromAngle) * t) * Math.PI / 180;
+      const x = center.x + rad * Math.cos(ang), y = center.y + rad * Math.sin(ang);
+      const ux = (x - center.x) / rad, uy = (y - center.y) / rad;
+      const a = { x: center.x + ux * (R + 2), y: center.y + uy * (R + 2) }, b = { x: x - ux * (r + 3), y: y - uy * (r + 3) };
+      s += outward
+        ? `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#3a4350" stroke-width="1.5" marker-end="url(#ah)"/>`
+        : `<line x1="${b.x}" y1="${b.y}" x2="${a.x}" y2="${a.y}" stroke="#3a4350" stroke-width="1.5" marker-end="url(#ah)"/>`;
+      const more = i === shown - 1 && count > shown;
+      s += `<circle cx="${x}" cy="${y}" r="${more ? 13 : r}" fill="#222831" stroke="#3a4350"/>`;
+      if (more) s += `<text x="${x}" y="${y + 4}" text-anchor="middle" font-size="10.5" fill="#9aa4b2">+${count - shown + 1}</text>`;
+    }
+    if (count) {
+      s += `<text x="${outward ? 6 : W - 6}" y="${H - 6}" text-anchor="${outward ? "start" : "end"}" font-size="13" fill="#6b7584">${label}</text>`;
+    }
+  };
+  fan(S, otherDst, 150, 255, true, `${otherDst} other host${otherDst === 1 ? "" : "s"} it contacted`);
+  fan(D, otherSrc, -75, 30, false, `${otherSrc} other host${otherSrc === 1 ? "" : "s"} contacting it`);
+  // main edge
+  s += `<line x1="${S.x + R + 2}" y1="${S.y}" x2="${D.x - R - 4}" y2="${D.y}" stroke="#ff6b5e" stroke-width="${same > 1 ? 5 : 3}" marker-end="url(#ahA)"/>`;
+  s += `<text x="${(S.x + D.x) / 2}" y="${S.y - 12}" text-anchor="middle" font-size="15" font-weight="600" fill="#ff8a80">:${f.destination_port} ${esc(f.protocol)}</text>`;
+  s += `<text x="${(S.x + D.x) / 2}" y="${S.y + 24}" text-anchor="middle" font-size="13" fill="#9aa4b2">${same > 1 ? `${fmt(same)} flows on this host + port` : "flagged flow"}</text>`;
+  for (const [P, name, sub] of [
+    [S, f.source_host, `sent ${fmt(w.source_outgoing_flows)} flows · ${fmt(w.source_distinct_destination_ports)} ports`],
+    [D, f.destination_host, `received ${fmt(w.destination_incoming_flows)} flows`],
+  ]) {
+    s += `<circle cx="${P.x}" cy="${P.y}" r="${R}" fill="#1c2129" stroke="${P === S ? "#ff6b5e" : "#5eb3ff"}" stroke-width="2"/>`;
+    s += `<text x="${P.x}" y="${P.y + 4}" text-anchor="middle" font-size="12" font-weight="700" fill="#e6e9ee">${P === S ? "SRC" : "DST"}</text>`;
+    s += `<text x="${P.x}" y="${P.y + R + 50}" text-anchor="middle" font-size="15" font-weight="600" fill="#e6e9ee" font-family="ui-monospace,monospace">${esc(name)}</text>`;
+    s += `<text x="${P.x}" y="${P.y + R + 68}" text-anchor="middle" font-size="13" fill="#9aa4b2">${sub}</text>`;
+  }
+  return s + `</svg>`;
+}
+
+function evidenceTable(ev) {
+  let html = `<table class="ev">`;
+  SECTIONS.forEach(([key, title], i) => {
+    html += `<tr class="${i === 0 ? "first" : ""}"><th colspan="2">${title}</th></tr>`;
+    for (const [field, value] of Object.entries(ev[key] || {})) {
+      let shown, v = "";
+      if (value === null) shown = `<span class="muted" title="Unavailable for this flow; not sent to the LLM">unavailable</span>`;
+      else if (Array.isArray(value)) shown = value.length ? esc(value.join(", ")) : `<span class="muted">none</span>`;
+      else if (typeof value === "number") { shown = fmt(value); v = ` data-v="${value}"`; }
+      else shown = esc(value);
+      html += `<tr${v}><td>${FIELD_LABELS[field] ?? esc(field.replace(/_/g, " "))}</td><td>${shown}</td></tr>`;
+    }
+  });
+  return html + `</table>`;
+}
+
+function alertHtml(text, allowed) {
+  let out = "", last = 0;
+  for (const m of text.matchAll(NUMBER)) {
+    const raw = m[0].replace(/,$/, "");
+    const v = toNum(raw);
+    out += esc(text.slice(last, m.index));
+    out += `<span class="n${allowed.has(v) ? "" : " orphan"}" data-v="${v}" tabindex="0">${esc(raw)}</span>`;
+    last = m.index + raw.length;
+  }
+  return out + esc(text.slice(last));
+}
+
+function checksList(a) {
+  const c = a.checks, m = a.evidence.model_output;
+  const count = [...a.text.matchAll(NUMBER)].length;
+  const fmtIssues = c.format_issues || [];
+  const rows = [
+    [!c.unsupported_numbers?.length, `All ${count} numbers appear in the evidence`, c.unsupported_numbers],
+    [!c.other_classes_named?.length, "Names only the predicted or runner-up class", c.other_classes_named],
+    [!c.speculative_terms?.length, "No claims about attackers, malware, payloads or actions", c.speculative_terms],
+    [!c.time_words?.length, "No time claims (the window has no time order)", c.time_words],
+    [!c.judgment_terms?.length, "States counts, not judgments like “suspicious” or “high”", c.judgment_terms],
+    [!c.spelled_numbers?.length, "Numbers written as digits, copied exactly", c.spelled_numbers],
+    [!fmtIssues.some((x) => x !== "missing_uncertainty"), "Standard opening, no raw field names", fmtIssues.filter((x) => x !== "missing_uncertainty")],
+  ];
+  if (m.confidence_percent != null && m.confidence_percent < 60)
+    rows.push([!fmtIssues.includes("missing_uncertainty"), `Low confidence (${m.confidence_percent}%) is flagged and the runner-up named`, ["missing_uncertainty"]]);
+  let html = `<ul class="checks">`;
+  for (const [ok, label, why] of rows)
+    html += `<li><span class="ic ${ok ? "ok" : "no"}">${ok ? "✓" : "✕"}</span><span>${label}${!ok && why?.length ? `<span class="why">${esc(why.join(", "))}</span>` : ""}</span></li>`;
+  html += `</ul><div class="overall"><span class="ic ${c.passed ? "ok" : "no"}" style="width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:${c.passed ? "rgba(70,201,139,.18)" : "rgba(255,107,94,.18)"};color:${c.passed ? "var(--ok)" : "var(--bad)"}">${c.passed ? "✓" : "✕"}</span>${c.passed ? "Alert passes all automated checks" : "Alert needs review"}</div>`;
+  return html;
+}
+
+function detail(a) {
+  const ev = a.evidence, m = ev.model_output, o = OUTCOMES[a.outcome] || { long: a.outcome, color: "var(--muted)", note: "" };
+  const conf = m.confidence_percent ?? 0;
+  const confColor = conf >= 60 ? "var(--accent)" : "var(--warn)";
+  const allowed = new Set();
+  for (const k of ["model_output", "flow", "window_context"])
+    for (const v of Object.values(ev[k] || {})) if (typeof v === "number") allowed.add(v);
+
+  $("detail").innerHTML = `
+    <div class="card a-v">
+      <h2><span class="num-badge">1</span>GNN verdict<span class="aside mono">${esc(a.id)}</span></h2>
+      <div class="verdict">
+        <div>
+          <div class="label">Predicted class</div>
+          <div class="big">${esc(m.predicted_class)} <span class="mono" style="font-size:20px;color:${confColor}">${m.confidence_percent ?? "–"}%</span></div>
+          <div class="bar"><i style="width:${conf}%;background:${confColor}"></i></div>
+        </div>
+        <div>
+          <div class="label">Runner-up</div>
+          <div class="mid">${esc(m.runner_up_class ?? "–")} <span class="mono muted" style="font-size:15px">${m.runner_up_percent ?? "–"}%</span></div>
+          <div class="small muted">${conf < 60 ? "Below 60%: the alert must say the class is uncertain" : "&nbsp;"}</div>
+        </div>
+        <div>
+          <div class="label">Ground truth · hidden from the LLM</div>
+          <div class="mid">${esc(a.true_class)}</div>
+          <span class="badge" style="background:color-mix(in srgb, ${o.color} 18%, transparent);color:${o.color}">${o.long}</span>
+          <div class="small muted">${o.note}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card a-g">
+      <h2><span class="num-badge">2</span>Where the flow sits in the graph</h2>
+      ${graphSvg(ev)}
+      <div class="graph-cap">Schematic drawn from the window counts. The red edge is the flagged flow; grey nodes stand for the other hosts each endpoint talks to.</div>
+    </div>
+
+    <div class="card a-e">
+      <h2><span class="num-badge">2</span>Evidence sent to the LLM</h2>
+      ${evidenceTable(ev)}
+    </div>
+
+    <div class="card a-a">
+      <h2><span class="num-badge">3</span>Generated alert<span class="aside">${esc(DATA.model)} · prompt ${esc(DATA.prompt_version)}</span></h2>
+      <p class="alert-text" id="alert-text">${alertHtml(a.text, allowed)}</p>
+      <div class="src-note" id="src-note">Hover a highlighted number to see which evidence field it comes from.</div>
+    </div>
+
+    <div class="card a-c">
+      <h2><span class="num-badge">4</span>Automated grounding checks</h2>
+      ${checksList(a)}
+    </div>
+
+    <div class="card a-f foot">
+      <p><b>What the checks show:</b> every number and class in the alert comes from the evidence, and the alert avoids claims the evidence can't support. They don't show which features the GNN actually relied on; the alert describes facts consistent with the prediction, not the model's reasoning.</p>
+      <p>Flow duration is unavailable for every flow in the UNSW test split (zero or a NetFlow timer wraparound value), so it is never sent to the LLM.</p>
+    </div>`;
+  wireLinks();
+}
+
+function highlight(v) {
+  document.querySelectorAll("#alert-text .n").forEach((el) => el.classList.toggle("hl", v != null && Number(el.dataset.v) === v));
+  const rows = [...document.querySelectorAll("table.ev tr[data-v]")];
+  const hits = rows.filter((tr) => v != null && Number(tr.dataset.v) === v);
+  rows.forEach((tr) => tr.classList.toggle("hl", hits.includes(tr)));
+  const note = $("src-note");
+  if (v == null) note.textContent = "Hover a highlighted number to see which evidence field it comes from.";
+  else if (!hits.length) note.innerHTML = `<span style="color:var(--bad)">${fmt(v)} does not appear in the evidence.</span>`;
+  else note.innerHTML = `<b class="mono" style="color:var(--accent)">${fmt(v)}</b> = ` + hits.map((tr) => esc(tr.cells[0].textContent)).join(" · ");
+}
+
+function wireLinks() {
+  const nodes = document.querySelectorAll("#alert-text .n, table.ev tr[data-v]");
+  nodes.forEach((el) => {
+    const v = Number(el.dataset.v);
+    el.addEventListener("mouseenter", () => highlight(v));
+    el.addEventListener("focus", () => highlight(v));
+    el.addEventListener("mouseleave", () => highlight(pinned));
+    el.addEventListener("click", () => { pinned = pinned === v ? null : v; highlight(pinned); });
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "SELECT") return;
+  const step = { ArrowDown: 1, j: 1, ArrowUp: -1, k: -1 }[e.key];
+  if (!step || !visible.length) return;
+  e.preventDefault();
+  const i = visible.findIndex((a) => a.id === current?.id);
+  select(visible[Math.min(visible.length - 1, Math.max(0, i + step))].id);
+});
+
+header();
+filters();
+list(false);
+if (visible.length) select(visible[0].id);
+</script>
+</body>
+</html>
