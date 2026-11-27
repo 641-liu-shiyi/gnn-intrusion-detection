@@ -87,10 +87,11 @@ def main() -> None:
     parser.add_argument(
         "--dataset",
         type=str,
-        choices=["unsw", "cicids"],
+        choices=["unsw", "cicids", "cicids_episode"],
         default="unsw",
         help="Select dataset (UNSW or CICIDS). Determines which graph directory is used.",
     )
+    parser.add_argument("--split-name", type=str, default=None, help="Optional graph subdirectory override (defaults to graphs_unsw or graphs_cicids_episode).")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument(
         "--max_samples",
@@ -148,12 +149,14 @@ def main() -> None:
     # Resolve the sub-directory name for the chosen dataset (UNSW or CICIDS).
     # ``resolve_split_name`` is defined in ``src.baselines.common`` and mirrors the
     # behaviour of the RF/XGB scripts.
-    from src.baselines.common import resolve_split_name
+    from src.baselines.common import normalize_dataset_name, resolve_default_data_root, resolve_split_name
 
     # Resolve the correct sub-directory based on the chosen dataset (UNSW or CICIDS).
     # ``resolve_split_name`` returns e.g. "graphs_unsw" which the ``DataLoader`` expects.
-    split_name = resolve_split_name(args.dataset)
-    loader = DataLoader(data_root=args.data_root, split_name=split_name)
+    dataset_norm = normalize_dataset_name(args.dataset)
+    split_name = args.split_name if args.split_name else resolve_split_name(dataset_norm)
+    data_root = args.data_root if args.data_root is not None else resolve_default_data_root(dataset_norm)
+    loader = DataLoader(data_root=data_root, split_name=split_name)
     X_train_np, y_train_np, train_meta = loader.load_training(max_samples=args.max_samples)
     X_val_np, y_val_multi_np, y_val_binary_np = loader.load_split("val")
     # Load validation IDs for export - some mock loaders used in tests may not
@@ -317,7 +320,7 @@ def main() -> None:
     if args.output_dir is not None:
         out_dir = args.output_dir
     else:
-        out_dir = Path("results") / f"mlp_{args.dataset.lower()}"
+        out_dir = Path("results") / f"mlp_{dataset_norm}"
     # Guard against accidental overwrites: if the directory exists and already contains a metrics JSON we consider it a completed run.
     if out_dir.is_dir() and (out_dir / "metrics.json").is_file():
         raise RuntimeError(f"Output directory '{out_dir}' already contains results; abort to avoid overwriting.")
@@ -414,7 +417,7 @@ def main() -> None:
         edge_id=edge_id_val,
         class_names=loader.class_names,
         benign_class_id=loader.benign_id,
-        dataset=args.dataset,
+        dataset=dataset_norm,
         split="val",
     )
 
@@ -451,7 +454,9 @@ def main() -> None:
         "test": X_test.shape[0] if args.evaluate_test else None,
     }
     run_config: Dict[str, Any] = {
-        "dataset": args.dataset.upper(),
+        "dataset": dataset_norm.upper(),
+        "split_name": split_name,
+        "graph_dir": str(getattr(loader, "graph_dir", data_root / split_name)),
         "feature_count": 39,
         "class_names": loader.class_names,
         "benign_id": loader.benign_id,

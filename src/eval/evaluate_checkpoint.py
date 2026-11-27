@@ -24,7 +24,7 @@ import torch
 import torch.nn.functional as F
 from sklearn.metrics import confusion_matrix, precision_recall_curve
 
-from src.baselines.common import resolve_split_name
+from src.baselines.common import normalize_dataset_name, resolve_default_data_root, resolve_split_name
 from src.baselines.data_loader import DataLoader
 from src.baselines.mlp_model import MLP
 from src.baselines.eval_utils import (
@@ -75,7 +75,8 @@ def _load_model(model_type: str, checkpoint_path: Path, num_classes: int) -> Any
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a frozen model checkpoint on validation or test data")
     parser.add_argument("--model", choices=["rf", "xgb", "mlp"], required=True, help="Model type")
-    parser.add_argument("--dataset", choices=["unsw", "cicids"], required=True, help="Dataset (UNSW or CICIDS)")
+    parser.add_argument("--dataset", choices=["unsw", "cicids", "cicids_episode"], required=True, help="Dataset (UNSW or CICIDS)")
+    parser.add_argument("--split-name", type=str, default=None, help="Optional graph subdirectory override (defaults to graphs_unsw or graphs_cicids_episode)")
     parser.add_argument("--checkpoint", type=Path, required=True, help="Path to model checkpoint")
     parser.add_argument("--split", choices=["val", "test"], default="test", help="Split to evaluate (default: test)")
     parser.add_argument("--output-dir", type=Path, required=True, help="Output directory for evaluation artifacts")
@@ -93,8 +94,10 @@ def main() -> None:
         raise RuntimeError(f"Output directory {out_dir} already contains results; aborting to prevent overwrite")
 
     # Resolve split and data loader
-    split_name = resolve_split_name(args.dataset)
-    loader = DataLoader(data_root=args.data_root, split_name=split_name)
+    dataset_norm = normalize_dataset_name(args.dataset)
+    split_name = args.split_name if args.split_name else resolve_split_name(dataset_norm)
+    data_root = args.data_root if args.data_root is not None else resolve_default_data_root(dataset_norm)
+    loader = DataLoader(data_root=data_root, split_name=split_name)
     num_classes = len(loader.class_names)
 
     print(f"[INFO] Loading split '{args.split}' for dataset '{args.dataset.upper()}'...")
@@ -116,11 +119,14 @@ def main() -> None:
         model_classes = getattr(model, "classes_", np.arange(num_classes))
         y_proba = align_probabilities(raw_proba, model_classes, num_classes)
     else:  # mlp
+        proba_parts = []
         with torch.no_grad():
-            tensor_X = torch.from_numpy(X).float()
-            logits = model(tensor_X)
-            y_proba = F.softmax(logits, dim=1).cpu().numpy()
-            y_pred = np.argmax(y_proba, axis=1)
+            for start in range(0, n_samples, 100_000):
+                tensor_X = torch.from_numpy(X[start : start + 100_000]).float()
+                logits = model(tensor_X)
+                proba_parts.append(F.softmax(logits, dim=1).cpu().numpy())
+        y_proba = np.vstack(proba_parts)
+        y_pred = np.argmax(y_proba, axis=1)
 
     inference_duration = max(time.time() - start_eval, 1e-6)
     print(f"[INFO] Inference completed in {inference_duration:.2f} seconds ({n_samples / inference_duration:.1f} flows/sec).")
@@ -152,7 +158,9 @@ def main() -> None:
     evaluation_report = {
         "evaluation": metrics,
         "n_samples": n_samples,
-        "dataset": args.dataset.upper(),
+        "dataset": dataset_norm.upper(),
+        "split_name": split_name,
+        "graph_dir": str(getattr(loader, "graph_dir", data_root / split_name)),
         "split": args.split,
         "model_type": args.model,
         "checkpoint_path": str(args.checkpoint.resolve()),
@@ -193,14 +201,16 @@ def main() -> None:
         edge_id=edge_ids,
         class_names=loader.class_names,
         benign_class_id=loader.benign_id,
-        dataset=args.dataset.upper(),
+        dataset=dataset_norm.upper(),
         split=args.split,
     )
 
     # Run configuration metadata
     run_cfg = {
         "model_type": args.model,
-        "dataset": args.dataset.upper(),
+        "dataset": dataset_norm.upper(),
+        "split_name": split_name,
+        "graph_dir": str(getattr(loader, "graph_dir", data_root / split_name)),
         "split": args.split,
         "checkpoint_path": str(args.checkpoint.resolve()),
         "output_dir": str(out_dir.resolve()),

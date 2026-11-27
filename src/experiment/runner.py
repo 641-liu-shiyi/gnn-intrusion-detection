@@ -296,7 +296,7 @@ def main() -> None:
     parser.add_argument("--model", choices=["rf", "xgb", "mlp"], help="Which baseline model to run")
     parser.add_argument(
         "--dataset",
-        choices=["unsw", "cicids"],
+        choices=["unsw", "cicids", "cicids_episode"],
         help="Dataset name",
     )
     parser.add_argument("--max_samples", type=int, default=0, help="Training budget (0 = use all)")
