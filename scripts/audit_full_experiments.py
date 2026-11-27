@@ -1,196 +1,185 @@
-"""Comprehensive audit of saved training configurations, checkpoints, validation coverage, test coverage, class distributions, and cross-dataset transfer."""
+"""Comprehensive audit & independent prediction recomputation for Part 2 experiments (UNSW + CICIDS Episode)."""
+
+from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
+from sklearn.metrics import confusion_matrix
 
-def audit_experiments():
-    out = {}
+from src.eval.metrics import compute_metrics, compute_proba_metrics
 
-    # 1. Training Runs
-    train_runs = [
+
+def _recompute_run(npz_path: Path, expected_dict: Dict[str, Any], is_binary_cross: bool = False) -> Dict[str, Any]:
+    with np.load(npz_path, allow_pickle=True) as data:
+        y_true_m = data["y_true_multiclass"]
+        y_pred_m = data["y_pred_multiclass"]
+        y_true_b = data["y_true_binary"]
+        y_pred_b = data["y_pred_binary"]
+        y_proba = data["y_proba_multiclass"]
+        g_ids = data["graph_id"]
+        e_ids = data["edge_id"]
+        cnames = [str(x) for x in data["class_names"]]
+        benign_id = int(data["benign_class_id"])
+
+    n = len(y_true_b)
+    stride = int(np.max(e_ids)) + 1 if n > 0 else 1
+    unique_pairs = int(np.unique(g_ids.astype(np.int64) * stride + e_ids.astype(np.int64)).size)
+    duplicate_pairs = n - unique_pairs
+
+    if is_binary_cross:
+        recomp = compute_metrics(
+            y_true_b,
+            y_pred_b,
+            class_names=["Benign", "Attack"],
+            binary_true=y_true_b,
+            binary_pred=y_pred_b,
+            benign_id=0,
+        )
+        recomp.update(
+            compute_proba_metrics(
+                y_true_b,
+                y_proba,
+                class_names=["Benign", "Attack"],
+                benign_id=0,
+                binary_true=y_true_b,
+            )
+        )
+        cm_recomp = confusion_matrix(y_true_b, y_pred_b).tolist()
+    else:
+        recomp = compute_metrics(
+            y_true_m,
+            y_pred_m,
+            class_names=cnames,
+            binary_true=y_true_b,
+            binary_pred=y_pred_b,
+            benign_id=benign_id,
+        )
+        recomp.update(
+            compute_proba_metrics(
+                y_true_m,
+                y_proba,
+                class_names=cnames,
+                benign_id=benign_id,
+                binary_true=y_true_b,
+            )
+        )
+        cm_recomp = recomp["confusion_matrix"]
+
+    scalar_keys = [
+        "accuracy",
+        "macro_precision",
+        "macro_recall",
+        "macro_f1",
+        "weighted_precision",
+        "weighted_recall",
+        "weighted_f1",
+        "binary_precision",
+        "binary_recall",
+        "binary_f1",
+        "binary_average_precision",
+    ]
+    max_diff = 0.0
+    for k in scalar_keys:
+        if k in expected_dict and k in recomp:
+            max_diff = max(max_diff, abs(float(expected_dict[k]) - float(recomp[k])))
+
+    cm_match = True
+    if not is_binary_cross and "confusion_matrix" in expected_dict:
+        cm_match = expected_dict["confusion_matrix"] == cm_recomp
+
+    return {
+        "evaluated_flows": n,
+        "unique_graphs_evaluated": int(len(np.unique(g_ids))),
+        "duplicate_pairs": duplicate_pairs,
+        "benign_id": benign_id,
+        "max_scalar_discrepancy": max_diff,
+        "confusion_matrix_exact_match": cm_match,
+    }
+
+
+def audit_experiments() -> None:
+    out: Dict[str, Any] = {"training_runs": [], "validation_runs": [], "test_runs": [], "cross_dataset_runs": []}
+
+    train_runs: List[Tuple[str, str, Path]] = [
         ("UNSW", "Random Forest", Path("results/experiments/unsw_full_seed42/rf")),
         ("UNSW", "XGBoost", Path("results/experiments/unsw_full_seed42/xgb")),
         ("UNSW", "PyTorch MLP", Path("results/experiments/unsw_full_seed42/mlp")),
-        ("CICIDS", "Random Forest", Path("results/experiments/cicids_100k_seed42/rf")),
-        ("CICIDS", "XGBoost", Path("results/experiments/cicids_100k_seed42/xgb")),
-        ("CICIDS", "PyTorch MLP", Path("results/experiments/cicids_100k_seed42/mlp")),
+        ("CICIDS_EPISODE", "Random Forest", Path("results/experiments/cicids_episode_100k_seed42/rf")),
+        ("CICIDS_EPISODE", "XGBoost", Path("results/experiments/cicids_episode_100k_seed42/xgb")),
+        ("CICIDS_EPISODE", "PyTorch MLP", Path("results/experiments/cicids_episode_100k_seed42/mlp")),
     ]
 
-    out["training_runs"] = []
     for dname, mname, rdir in train_runs:
         cfg_file = rdir / "run_config.json"
         met_file = rdir / "metrics.json"
-        ckpt_joblib = rdir / "model.joblib"
-        ckpt_pt = rdir / "model.pt"
-
-        cfg = json.loads(cfg_file.read_text(encoding="utf-8")) if cfg_file.exists() else {}
-        met = json.loads(met_file.read_text(encoding="utf-8")) if met_file.exists() else {}
-
-        ckpt_path = ckpt_joblib if ckpt_joblib.exists() else (ckpt_pt if ckpt_pt.exists() else None)
-
+        ckpt_path = rdir / "model.joblib" if (rdir / "model.joblib").exists() else rdir / "model.pt"
+        cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
+        met = json.loads(met_file.read_text(encoding="utf-8"))
         hp = cfg.get("hyperparameters", {})
         shape = cfg.get("train_matrix_shape", {})
-        record = {
-            "dataset": dname,
-            "model": mname,
-            "directory": str(rdir),
-            "config_exists": cfg_file.exists(),
-            "checkpoint_exists": ckpt_path is not None,
-            "checkpoint_path": str(ckpt_path) if ckpt_path else None,
-            "checkpoint_size_bytes": ckpt_path.stat().st_size if ckpt_path else 0,
-            "seed": hp.get("seed"),
-            "max_samples_arg": hp.get("max_samples"),
-            "actual_train_samples": shape.get("rows"),
-            "class_weight": hp.get("class_weight"),
-            "train_time_seconds": met.get("train_time_seconds"),
-            "sampled_train_class_distribution": cfg.get("sampled_train_class_distribution"),
-            "original_train_class_distribution": cfg.get("original_train_class_distribution"),
-            "hyperparameters": hp
-        }
-        out["training_runs"].append(record)
+        out["training_runs"].append(
+            {
+                "dataset": dname,
+                "model": mname,
+                "directory": str(rdir),
+                "split_name": cfg.get("split_name"),
+                "checkpoint_exists": ckpt_path.exists(),
+                "seed": hp.get("seed"),
+                "actual_train_samples": shape.get("rows"),
+                "class_weight": hp.get("class_weight"),
+                "train_time_seconds": met.get("train_time_seconds"),
+            }
+        )
 
-    # 2. Validation Coverage
-    out["validation_runs"] = []
-    val_runs = [
-        ("UNSW", "Random Forest", Path("results/experiments/unsw_full_seed42/rf")),
-        ("UNSW", "XGBoost", Path("results/experiments/unsw_full_seed42/xgb")),
-        ("UNSW", "PyTorch MLP", Path("results/experiments/unsw_full_seed42/mlp")),
-        ("CICIDS", "Random Forest", Path("results/experiments/cicids_100k_seed42/rf")),
-        ("CICIDS", "XGBoost", Path("results/experiments/cicids_100k_seed42/xgb")),
-        ("CICIDS", "PyTorch MLP", Path("results/experiments/cicids_100k_seed42/mlp")),
-    ]
+        val_audit = _recompute_run(rdir / "predictions.npz", met.get("validation", met), is_binary_cross=False)
+        out["validation_runs"].append({"dataset": dname, "model": mname, **val_audit})
 
-    for dname, mname, rdir in val_runs:
-        npz_file = rdir / "predictions.npz"
-        met_file = rdir / "metrics.json"
-
-        if not npz_file.exists():
-            out["validation_runs"].append({"dataset": dname, "model": mname, "error": "npz not found"})
-            continue
-
-        data = np.load(npz_file, allow_pickle=True)
-        y_true_m = data["y_true_multiclass"]
-        y_pred_m = data["y_pred_multiclass"]
-        g_ids = data["graph_id"]
-        e_ids = data["edge_id"]
-        cnames = list(data["class_names"])
-        benign_id = int(data["benign_class_id"])
-
-        unique_graphs = np.unique(g_ids)
-        # Check uniqueness of (graph_id, edge_id) pairs
-        pair_hashes = set(zip(g_ids.tolist(), e_ids.tolist()))
-        duplicates = len(g_ids) - len(pair_hashes)
-
-        # Class counts
-        cls_counts = {}
-        for idx, cname in enumerate(cnames):
-            cls_counts[cname] = int(np.sum(y_true_m == idx))
-
-        out["validation_runs"].append({
-            "dataset": dname,
-            "model": mname,
-            "evaluated_flows": len(y_true_m),
-            "unique_graphs_evaluated": len(unique_graphs),
-            "graph_ids_min_max": (int(np.min(g_ids)), int(np.max(g_ids))),
-            "duplicate_pairs": duplicates,
-            "benign_id": benign_id,
-            "benign_class_name": cnames[benign_id],
-            "class_distribution": cls_counts
-        })
-
-    # 3. Test Coverage
-    out["test_runs"] = []
-    test_runs = [
+    test_runs: List[Tuple[str, str, Path]] = [
         ("UNSW", "Random Forest", Path("results/test_evaluation/unsw/rf")),
         ("UNSW", "XGBoost", Path("results/test_evaluation/unsw/xgb")),
         ("UNSW", "PyTorch MLP", Path("results/test_evaluation/unsw/mlp")),
-        ("CICIDS", "Random Forest", Path("results/test_evaluation/cicids/rf")),
-        ("CICIDS", "XGBoost", Path("results/test_evaluation/cicids/xgb")),
-        ("CICIDS", "PyTorch MLP", Path("results/test_evaluation/cicids/mlp")),
+        ("CICIDS_EPISODE", "Random Forest", Path("results/test_evaluation/cicids_episode/rf")),
+        ("CICIDS_EPISODE", "XGBoost", Path("results/test_evaluation/cicids_episode/xgb")),
+        ("CICIDS_EPISODE", "PyTorch MLP", Path("results/test_evaluation/cicids_episode/mlp")),
     ]
-
     for dname, mname, rdir in test_runs:
-        npz_file = rdir / "predictions.npz"
-        met_file = rdir / "metrics.json"
-        cfg_file = rdir / "run_config.json"
+        met = json.loads((rdir / "metrics.json").read_text(encoding="utf-8"))
+        test_audit = _recompute_run(rdir / "predictions.npz", met.get("evaluation", met), is_binary_cross=False)
+        out["test_runs"].append({"dataset": dname, "model": mname, **test_audit})
 
-        if not npz_file.exists():
-            out["test_runs"].append({"dataset": dname, "model": mname, "error": "npz not found"})
-            continue
-
-        data = np.load(npz_file, allow_pickle=True)
-        cfg = json.loads(cfg_file.read_text(encoding="utf-8")) if cfg_file.exists() else {}
-        y_true_m = data["y_true_multiclass"]
-        y_pred_m = data["y_pred_multiclass"]
-        g_ids = data["graph_id"]
-        e_ids = data["edge_id"]
-        cnames = list(data["class_names"])
-        benign_id = int(data["benign_class_id"])
-
-        unique_graphs = np.unique(g_ids)
-        pair_hashes = set(zip(g_ids.tolist(), e_ids.tolist()))
-        duplicates = len(g_ids) - len(pair_hashes)
-
-        cls_counts = {}
-        for idx, cname in enumerate(cnames):
-            cls_counts[cname] = int(np.sum(y_true_m == idx))
-
-        out["test_runs"].append({
-            "dataset": dname,
-            "model": mname,
-            "checkpoint_loaded": cfg.get("checkpoint_path", cfg.get("checkpoint")),
-            "evaluated_flows": len(y_true_m),
-            "unique_graphs_evaluated": len(unique_graphs),
-            "duplicate_pairs": duplicates,
-            "benign_id": benign_id,
-            "class_distribution": cls_counts
-        })
-
-    # 4. Cross-Dataset Runs
-    out["cross_dataset_runs"] = []
-    cross_runs = [
-        ("UNSW -> CICIDS", "Random Forest", Path("results/cross_dataset/unsw_to_cicids/rf")),
-        ("UNSW -> CICIDS", "XGBoost", Path("results/cross_dataset/unsw_to_cicids/xgb")),
-        ("UNSW -> CICIDS", "PyTorch MLP", Path("results/cross_dataset/unsw_to_cicids/mlp")),
-        ("CICIDS -> UNSW", "Random Forest", Path("results/cross_dataset/cicids_to_unsw/rf")),
-        ("CICIDS -> UNSW", "XGBoost", Path("results/cross_dataset/cicids_to_unsw/xgb")),
-        ("CICIDS -> UNSW", "PyTorch MLP", Path("results/cross_dataset/cicids_to_unsw/mlp")),
+    cross_runs: List[Tuple[str, str, str, Path]] = [
+        ("UNSW -> CICIDS (Episode)", "val", m, Path(f"results/cross_dataset_episode/unsw_to_cicids_val/{m}"))
+        for m in ("rf", "xgb", "mlp")
+    ] + [
+        ("UNSW -> CICIDS (Episode)", "test", m, Path(f"results/cross_dataset_episode/unsw_to_cicids_test/{m}"))
+        for m in ("rf", "xgb", "mlp")
+    ] + [
+        ("CICIDS (Episode) -> UNSW", "val", m, Path(f"results/cross_dataset_episode/cicids_to_unsw_val/{m}"))
+        for m in ("rf", "xgb", "mlp")
+    ] + [
+        ("CICIDS (Episode) -> UNSW", "test", m, Path(f"results/cross_dataset_episode/cicids_to_unsw_test/{m}"))
+        for m in ("rf", "xgb", "mlp")
     ]
-
-    for direction, mname, rdir in cross_runs:
-        npz_file = rdir / "predictions.npz"
-        met_file = rdir / "metrics.json"
-        cfg_file = rdir / "run_config.json"
-
-        if not npz_file.exists():
-            out["cross_dataset_runs"].append({"direction": direction, "model": mname, "error": "npz not found"})
-            continue
-
-        data = np.load(npz_file, allow_pickle=True)
-        cfg = json.loads(cfg_file.read_text(encoding="utf-8")) if cfg_file.exists() else {}
-        y_true_b = data["y_true_binary"]
-        y_pred_b = data["y_pred_binary"]
-        g_ids = data["graph_id"]
-        e_ids = data["edge_id"]
-
-        unique_graphs = np.unique(g_ids)
-        pair_hashes = set(zip(g_ids.tolist(), e_ids.tolist()))
-
-        out["cross_dataset_runs"].append({
-            "direction": direction,
-            "model": mname,
-            "checkpoint_loaded": cfg.get("checkpoint_path", cfg.get("checkpoint")),
-            "evaluated_flows": len(y_true_b),
-            "unique_graphs_evaluated": len(unique_graphs),
-            "duplicate_pairs": len(y_true_b) - len(pair_hashes),
-            "target_true_attacks": int(np.sum(y_true_b == 1)),
-            "target_true_benign": int(np.sum(y_true_b == 0)),
-        })
+    for direction, split, mname, rdir in cross_runs:
+        met = json.loads((rdir / "metrics.json").read_text(encoding="utf-8"))
+        cross_audit = _recompute_run(rdir / "predictions.npz", met, is_binary_cross=True)
+        out["cross_dataset_runs"].append({"direction": direction, "split": split, "model": mname, **cross_audit})
 
     out_file = Path("results/experiment_coverage_audit.json")
     out_file.write_text(json.dumps(out, indent=2), encoding="utf-8")
-    print(f"[INFO] Saved experiment coverage audit to {out_file}")
+    print(f"[INFO] Saved experiment coverage & recomputation audit to {out_file}")
+
+    all_audits = out["validation_runs"] + out["test_runs"] + out["cross_dataset_runs"]
+    max_err = max(a["max_scalar_discrepancy"] for a in all_audits)
+    dup_total = sum(a["duplicate_pairs"] for a in all_audits)
+    cm_ok = all(a["confusion_matrix_exact_match"] for a in all_audits)
+    print(f"[AUDIT] Max metric recomputation discrepancy: {max_err:.8f}, total duplicates: {dup_total}, confusion matrices exact: {cm_ok}")
+    if max_err > 1e-9 or dup_total > 0 or not cm_ok:
+        raise RuntimeError("Audit verification failed!")
+
 
 if __name__ == "__main__":
     audit_experiments()

@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
 import numpy as np
+from src.baselines.common import resolve_data_root_for_split
 
 __all__ = ["DataLoader"]
 
@@ -57,7 +58,7 @@ class DataLoader:
         seed: int = 42,
     ) -> None:
         repo_root = Path(__file__).resolve().parents[2]
-        self.data_root = Path(data_root) if data_root is not None else repo_root / "graph_data_bundle" / "data"
+        self.data_root = Path(data_root) if data_root is not None else resolve_data_root_for_split(split_name, repo_root=repo_root)
         self.graph_dir: Path = self.data_root / split_name
         if not self.graph_dir.is_dir():
             raise FileNotFoundError(f"Graph directory '{self.graph_dir}' does not exist")

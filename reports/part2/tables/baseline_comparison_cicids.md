@@ -1,5 +1,5 @@
-| Model | Accuracy | Macro F1 | Weighted F1 | Binary F1 |
-|---|---|---|---|---|
-| Random Forest | 0.9701 | 0.0657 | 0.9558 | 0.0013 |
-| XGBoost | 0.9636 | 0.0656 | 0.9548 | 0.2225 |
-| PyTorch MLP | 0.5766 | 0.0490 | 0.7139 | 0.0412 |
+| Model | Accuracy | Macro F1 | Weighted F1 | Binary Precision | Binary Recall | Binary F1 | Binary AP |
+|---|---|---|---|---|---|---|---|
+| Random Forest | 0.7546 | 0.5994 | 0.8452 | 0.3395 | 0.9432 | 0.4992 | 0.8785 |
+| XGBoost | 0.7230 | 0.5279 | 0.8251 | 0.3135 | 0.9633 | 0.4730 | 0.9595 |
+| PyTorch MLP | 0.5711 | 0.5048 | 0.7032 | 0.2248 | 0.9799 | 0.3657 | 0.9188 |

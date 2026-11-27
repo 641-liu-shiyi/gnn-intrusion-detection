@@ -1,0 +1,8 @@
+| Transfer Direction | Model | Accuracy | Binary Precision | Binary Recall | Binary F1 | Binary AP |
+|---|---|---|---|---|---|---|
+| UNSW -> CICIDS | RF | 0.6795 | 0.0325 | 0.3427 | 0.0593 | 0.0265 |
+| UNSW -> CICIDS | XGBoost | 0.2663 | 0.0276 | 0.6970 | 0.0530 | 0.0285 |
+| UNSW -> CICIDS | PyTorch MLP | 0.6780 | 0.0290 | 0.3049 | 0.0529 | 0.0291 |
+| CICIDS -> UNSW | RF | 0.8638 | 0.0004 | 0.0005 | 0.0004 | 0.0382 |
+| CICIDS -> UNSW | XGBoost | 0.5677 | 0.0542 | 0.3371 | 0.0933 | 0.0712 |
+| CICIDS -> UNSW | PyTorch MLP | 0.4290 | 0.0693 | 0.6151 | 0.1245 | 0.1603 |

@@ -1,8 +1,8 @@
 | Model | Split | Accuracy | Macro F1 | Weighted F1 | Binary Precision | Binary Recall | Binary F1 | Binary AP |
 |---|---|---|---|---|---|---|---|---|
-| Random Forest | Validation | 0.9701 | 0.0657 | 0.9558 | 0.0463 | 0.0007 | 0.0013 | 0.0822 |
-| Random Forest | Held-Out Test | 0.9560 | 0.0652 | 0.9349 | 0.0484 | 0.0004 | 0.0008 | 0.4960 |
-| XGBoost | Validation | 0.9636 | 0.0656 | 0.9548 | 0.3977 | 0.1544 | 0.2225 | 0.1066 |
-| XGBoost | Held-Out Test | 0.9493 | 0.0650 | 0.9331 | 0.3186 | 0.0757 | 0.1223 | 0.5157 |
-| PyTorch MLP | Validation | 0.5766 | 0.0490 | 0.7139 | 0.0221 | 0.3017 | 0.0412 | 0.0301 |
-| PyTorch MLP | Held-Out Test | 0.5891 | 0.0505 | 0.7248 | 0.0858 | 0.7908 | 0.1549 | 0.3439 |
+| Random Forest | Validation | 0.7546 | 0.5994 | 0.8452 | 0.3395 | 0.9432 | 0.4992 | 0.8785 |
+| Random Forest | Held-Out Test | 0.7720 | 0.5590 | 0.8591 | 0.2890 | 0.9145 | 0.4392 | 0.8578 |
+| XGBoost | Validation | 0.7230 | 0.5279 | 0.8251 | 0.3135 | 0.9633 | 0.4730 | 0.9595 |
+| XGBoost | Held-Out Test | 0.7432 | 0.5093 | 0.8419 | 0.2683 | 0.9572 | 0.4191 | 0.9435 |
+| PyTorch MLP | Validation | 0.5711 | 0.5048 | 0.7032 | 0.2248 | 0.9799 | 0.3657 | 0.9188 |
+| PyTorch MLP | Held-Out Test | 0.5966 | 0.4531 | 0.7280 | 0.1891 | 0.9793 | 0.3170 | 0.9449 |

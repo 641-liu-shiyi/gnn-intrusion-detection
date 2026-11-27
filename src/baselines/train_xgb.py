@@ -22,7 +22,7 @@ from sklearn.metrics import confusion_matrix, precision_recall_curve
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.class_weight import compute_class_weight
 
-from src.baselines.common import resolve_split_name
+from src.baselines.common import normalize_dataset_name, resolve_default_data_root, resolve_split_name
 from src.baselines.data_loader import DataLoader
 from src.eval.metrics import compute_metrics, compute_proba_metrics
 from src.baselines.eval_utils import (
@@ -55,15 +55,16 @@ def main() -> None:
         "--data-root",
         type=Path,
         default=None,
-        help="Root directory containing 'graphs_unsw' or 'graphs_cicids'. If omitted, the default bundled path is used.",
+        help="Root directory containing 'graphs_unsw' or 'graphs_cicids_episode'. If omitted, the dataset default root is used.",
     )
     parser.add_argument(
         "--dataset",
         type=str,
-        choices=["unsw", "cicids"],
+        choices=["unsw", "cicids", "cicids_episode"],
         default="unsw",
         help="Select dataset (UNSW or CICIDS).",
     )
+    parser.add_argument("--split-name", type=str, default=None, help="Optional graph subdirectory override (defaults to graphs_unsw or graphs_cicids_episode).")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--n_estimators", type=int, default=50, help="Number of boosting rounds")
     parser.add_argument("--max_depth", type=int, default=6, help="Maximum tree depth")
@@ -97,14 +98,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    out_dir = args.output_dir if args.output_dir is not None else Path("results") / f"xgb_{args.dataset.lower()}"
+    dataset_norm = normalize_dataset_name(args.dataset)
+    out_dir = args.output_dir if args.output_dir is not None else Path("results") / f"xgb_{dataset_norm}"
     if out_dir.is_dir() and (out_dir / "metrics.json").is_file():
         raise RuntimeError(
             f"Output directory '{out_dir}' already contains results; abort to avoid overwriting."
         )
 
-    split_name = resolve_split_name(args.dataset)
-    loader = DataLoader(data_root=args.data_root, split_name=split_name)
+    split_name = args.split_name if args.split_name else resolve_split_name(dataset_norm)
+    data_root = args.data_root if args.data_root is not None else resolve_default_data_root(dataset_norm)
+    loader = DataLoader(data_root=data_root, split_name=split_name)
 
     X_train, y_train_multi, train_meta = loader.load_training(max_samples=args.max_samples)
     y_train_bin = (y_train_multi != loader.benign_id).astype(np.int64)
@@ -282,7 +285,7 @@ def main() -> None:
         edge_id=edge_id_val,
         class_names=loader.class_names,
         benign_class_id=loader.benign_id,
-        dataset=args.dataset,
+        dataset=dataset_norm,
         split="val",
     )
 
@@ -314,7 +317,9 @@ def main() -> None:
         "test": X_test.shape[0] if args.evaluate_test else None,
     }
     run_config: Dict[str, Any] = {
-        "dataset": args.dataset.upper(),
+        "dataset": dataset_norm.upper(),
+        "split_name": split_name,
+        "graph_dir": str(getattr(loader, "graph_dir", data_root / split_name)),
         "feature_count": 39,
         "class_names": loader.class_names,
         "benign_id": loader.benign_id,

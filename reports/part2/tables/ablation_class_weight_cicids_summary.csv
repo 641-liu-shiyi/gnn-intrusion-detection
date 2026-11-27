@@ -1,0 +1,7 @@
+Model,Weighting_Policy,Accuracy,Macro_F1,Binary_Precision,Binary_Recall,Binary_F1,Binary_AP,Attack_Miss_Rate
+Random Forest,balanced_subsample,0.7546,0.5994,0.3395,0.9432,0.4992,0.8785,5.68%
+Random Forest,none,0.9723,0.5905,0.9892,0.8954,0.9400,0.9647,10.46%
+XGBoost,balanced,0.7230,0.5279,0.3135,0.9633,0.4730,0.9595,3.67%
+XGBoost,none,0.9542,0.4280,0.9712,0.7838,0.8675,0.9549,21.62%
+PyTorch MLP,balanced,0.5711,0.5048,0.2248,0.9799,0.3657,0.9188,2.01%
+PyTorch MLP,none,0.9813,0.4922,0.9746,0.9244,0.9489,0.9304,7.56%

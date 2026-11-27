@@ -19,77 +19,69 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-import numpy as np
 import joblib
+import numpy as np
 import torch
 from sklearn.metrics import confusion_matrix
 
+from src.baselines.common import (
+    normalize_dataset_name,
+    resolve_default_data_root,
+    resolve_feature_dir_name,
+    resolve_split_name,
+)
 from src.baselines.data_loader import DataLoader
-from src.eval.metrics import compute_metrics, compute_proba_metrics
-from src.eval.preprocess_cross import inverse_transform_and_reorder
 from src.baselines.eval_utils import (
-    save_predictions_npz,
-    write_json,
-    write_csv,
-    write_confusion_csv,
-    plot_confusion_matrix,
     XGBModelWrapper,
+    plot_confusion_matrix,
+    save_predictions_npz,
+    write_confusion_csv,
+    write_csv,
+    write_json,
 )
 from src.baselines.mlp_model import MLP
+from src.eval.metrics import compute_metrics, compute_proba_metrics
+from src.eval.preprocess_cross import inverse_transform_and_reorder
 import __main__
 
 setattr(__main__, "XGBModelWrapper", XGBModelWrapper)
 
 
-def _load_scaler_and_features(dataset: str, data_root: Path) -> tuple[Any, List[str]]:
-    """Load ``scaler.joblib`` and ``feature_names.joblib`` for a dataset.
-
-    Parameters
-    ----------
-    dataset:
-        ``"unsw"`` or ``"cicids"``.
-    data_root:
-        Path containing ``features`` or ``features_cicids`` subdirectories.
-    """
-    if dataset == "unsw":
-        feature_dir = data_root / "features"
-    else:
-        feature_dir = data_root / "features_cicids"
+def _load_scaler_and_features(
+    dataset: str,
+    data_root: Path,
+    feature_dir_override: Path | None = None,
+) -> tuple[Any, List[str], Path]:
+    """Load ``scaler.joblib`` and ``feature_names.joblib`` for a dataset."""
+    feature_dir = (
+        feature_dir_override
+        if feature_dir_override is not None
+        else data_root / resolve_feature_dir_name(dataset)
+    )
+    if not feature_dir.is_dir():
+        raise FileNotFoundError(f"Feature directory not found for dataset {dataset} at {feature_dir}")
     scaler = joblib.load(feature_dir / "scaler.joblib")
     feature_names: List[str] = joblib.load(feature_dir / "feature_names.joblib")
-    return scaler, feature_names
+    return scaler, feature_names, feature_dir
 
 
-def _load_class_names(dataset: str, data_root: Path) -> List[str]:
-    class_path = data_root / f"graphs_{dataset}" / "class_names.json"
+def _load_class_names(dataset: str, data_root: Path, split_name: str | None = None) -> List[str]:
+    resolved_split = split_name if split_name else resolve_split_name(dataset)
+    class_path = data_root / resolved_split / "class_names.json"
     if not class_path.is_file():
         raise FileNotFoundError(f"class_names.json not found for dataset {dataset} at {class_path}")
     return json.loads(class_path.read_text(encoding="utf-8"))
 
 
 def _load_model(model_type: str, checkpoint: Path, input_dim: int, n_classes: int):
-    """Load a model checkpoint.
-
-    ``model_type`` must be one of ``rf``, ``xgb`` or ``mlp``.
-    ``input_dim`` and ``n_classes`` are required for constructing an MLP.
-    """
-    if model_type == "rf":
-        import joblib
-
+    """Load a model checkpoint (``rf``, ``xgb``, or ``mlp``)."""
+    if model_type in {"rf", "xgb"}:
         model = joblib.load(checkpoint)
         if not hasattr(model, "predict"):
-            raise ValueError("Loaded RandomForest checkpoint does not have predict method")
-        return model
-    if model_type == "xgb":
-        import joblib
-
-        model = joblib.load(checkpoint)
-        if not hasattr(model, "predict"):
-            raise ValueError("Loaded XGBoost checkpoint does not have predict method")
+            raise ValueError(f"Loaded {model_type} checkpoint does not have predict method")
         return model
     if model_type == "mlp":
         state = torch.load(checkpoint, map_location="cpu")
@@ -103,31 +95,65 @@ def _load_model(model_type: str, checkpoint: Path, input_dim: int, n_classes: in
     raise ValueError(f"Unsupported model type: {model_type}")
 
 
+def _predict_mlp_batched(model: MLP, X: np.ndarray, batch_size: int = 100_000) -> tuple[np.ndarray, np.ndarray]:
+    """Run CPU MLP inference in chunks to keep memory usage bounded on large splits."""
+    proba_parts: List[np.ndarray] = []
+    with torch.no_grad():
+        for start in range(0, X.shape[0], batch_size):
+            batch = torch.from_numpy(X[start : start + batch_size]).float()
+            logits = model(batch)
+            proba_parts.append(torch.nn.functional.softmax(logits, dim=1).cpu().numpy())
+    y_proba = np.vstack(proba_parts)
+    y_pred = np.argmax(y_proba, axis=1)
+    return y_pred, y_proba
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Cross-dataset evaluation of a source model on a target dataset")
     parser.add_argument("--model", choices=["rf", "xgb", "mlp"], required=True, help="Model type to load")
-    parser.add_argument("--source-dataset", choices=["unsw", "cicids"], required=True, help="Dataset on which the model was trained")
-    parser.add_argument("--target-dataset", choices=["unsw", "cicids"], required=True, help="Dataset to evaluate on")
+    parser.add_argument("--source-dataset", choices=["unsw", "cicids", "cicids_episode"], required=True, help="Dataset on which the model was trained")
+    parser.add_argument("--target-dataset", choices=["unsw", "cicids", "cicids_episode"], required=True, help="Dataset to evaluate on")
     parser.add_argument("--checkpoint", type=Path, required=True, help="Path to the source model checkpoint file")
     parser.add_argument("--split", choices=["val", "test"], default="val", help="Target split to evaluate (default: val)")
     parser.add_argument("--output-dir", type=Path, required=True, help="Directory where artefacts will be written")
-    parser.add_argument("--data-root", type=Path, default=None, help="Root directory containing the graph datasets (optional)")
+    parser.add_argument("--data-root", type=Path, default=None, help="Shared root directory containing datasets (optional)")
+    parser.add_argument("--source-data-root", type=Path, default=None, help="Root directory for the source dataset (optional)")
+    parser.add_argument("--target-data-root", type=Path, default=None, help="Root directory for the target dataset (optional)")
+    parser.add_argument("--source-split-name", type=str, default=None, help="Override graph directory name for source dataset")
+    parser.add_argument("--target-split-name", type=str, default=None, help="Override graph directory name for target dataset")
+    parser.add_argument("--source-feature-dir", type=Path, default=None, help="Override feature/scaler directory for source dataset")
+    parser.add_argument("--target-feature-dir", type=Path, default=None, help="Override feature/scaler directory for target dataset")
     parser.add_argument("--confirm-test", action="store_true", help="Required flag to permit evaluation on the test split")
     args = parser.parse_args()
 
-    if args.source_dataset == args.target_dataset:
+    source_norm = normalize_dataset_name(args.source_dataset)
+    target_norm = normalize_dataset_name(args.target_dataset)
+    if source_norm == target_norm:
         raise ValueError("Source and target datasets must differ for cross-dataset evaluation")
     if args.split == "test" and not args.confirm_test:
         raise ValueError("Evaluating on the test split requires explicit --confirm-test flag")
 
     repo_root = Path(__file__).resolve().parents[2]
-    data_root = args.data_root if args.data_root is not None else repo_root / "graph_data_bundle" / "data"
+    source_root = (
+        args.source_data_root
+        if args.source_data_root is not None
+        else (args.data_root if args.data_root is not None else resolve_default_data_root(source_norm, repo_root=repo_root))
+    )
+    target_root = (
+        args.target_data_root
+        if args.target_data_root is not None
+        else (args.data_root if args.data_root is not None else resolve_default_data_root(target_norm, repo_root=repo_root))
+    )
+    source_split_name = args.source_split_name if args.source_split_name else resolve_split_name(source_norm)
+    target_split_name = args.target_split_name if args.target_split_name else resolve_split_name(target_norm)
 
     # ---------------------------------------------------------------------
     # Load source artefacts (scaler, feature names, class names)
     # ---------------------------------------------------------------------
-    source_scaler, source_feature_names = _load_scaler_and_features(args.source_dataset, data_root)
-    source_class_names = _load_class_names(args.source_dataset, data_root)
+    source_scaler, source_feature_names, source_feature_dir = _load_scaler_and_features(
+        source_norm, source_root, feature_dir_override=args.source_feature_dir
+    )
+    source_class_names = _load_class_names(source_norm, source_root, split_name=source_split_name)
     source_n_classes = len(source_class_names)
     try:
         source_benign_id = source_class_names.index("Benign")
@@ -137,14 +163,13 @@ def main() -> None:
     # ---------------------------------------------------------------------
     # Load target data
     # ---------------------------------------------------------------------
-    loader = DataLoader(data_root=data_root, split_name=f"graphs_{args.target_dataset}")
-    if args.split == "val":
-        X_target, y_target_multi, y_target_binary, graph_ids, edge_ids = loader.load_split_with_ids("val")
-    else:
-        X_target, y_target_multi, y_target_binary, graph_ids, edge_ids = loader.load_split_with_ids("test")
+    loader = DataLoader(data_root=target_root, split_name=target_split_name)
+    X_target, y_target_multi, y_target_binary, graph_ids, edge_ids = loader.load_split_with_ids(args.split)
 
     # Load target scaler/feature names
-    target_scaler, target_feature_names = _load_scaler_and_features(args.target_dataset, data_root)
+    target_scaler, target_feature_names, target_feature_dir = _load_scaler_and_features(
+        target_norm, target_root, feature_dir_override=args.target_feature_dir
+    )
 
     # ---------------------------------------------------------------------
     # Transform target features into the source preprocessing space
@@ -166,10 +191,7 @@ def main() -> None:
         y_pred_multi = model.predict(X_source)
         y_proba = model.predict_proba(X_source)
     else:  # mlp
-        with torch.no_grad():
-            logits = model(torch.from_numpy(X_source).float())
-            y_proba = torch.nn.functional.softmax(logits, dim=1).cpu().numpy()
-            y_pred_multi = np.argmax(y_proba, axis=1)
+        y_pred_multi, y_proba = _predict_mlp_batched(model, X_source)
 
     # Binary conversion based on source benign id
     y_pred_binary = (y_pred_multi != source_benign_id).astype(np.int64)
@@ -197,7 +219,6 @@ def main() -> None:
         benign_id=0,
         binary_true=y_target_binary,
     )
-    # Merge metric dictionaries for convenience
     metrics: Dict[str, Any] = {**binary_metrics, **proba_metrics}
 
     # ---------------------------------------------------------------------
@@ -209,7 +230,6 @@ def main() -> None:
         raise RuntimeError(f"Output directory {out_dir} already contains results; abort to avoid overwriting")
 
     write_json(out_dir / "metrics.json", metrics)
-    # Simple CSV version - write flat dict (one row)
     write_csv(out_dir / "metrics.csv", metrics)
 
     # Binary confusion matrix CSV and PNG
@@ -226,7 +246,7 @@ def main() -> None:
         title="Binary confusion matrix",
     )
 
-    # Save predictions using the shared utility - note we store source class names
+    # Save predictions using the shared utility
     save_predictions_npz(
         out_dir / "predictions.npz",
         y_true_multiclass=y_target_multi,
@@ -238,15 +258,20 @@ def main() -> None:
         edge_id=edge_ids,
         class_names=binary_class_names,
         benign_class_id=0,
-        dataset=args.target_dataset,
+        dataset=target_norm,
         split=args.split,
     )
 
     # Run configuration JSON - captures the essential provenance information.
     run_cfg = {
         "model_type": args.model,
-        "source_dataset": args.source_dataset,
-        "target_dataset": args.target_dataset,
+        "source_dataset": source_norm,
+        "target_dataset": target_norm,
+        "source_split_name": source_split_name,
+        "target_split_name": target_split_name,
+        "source_feature_dir": str(source_feature_dir),
+        "target_feature_dir": str(target_feature_dir),
+        "target_graph_dir": str(loader.graph_dir),
         "source_feature_count": len(source_feature_names),
         "target_feature_count": len(target_feature_names),
         "source_class_names": source_class_names,

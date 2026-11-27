@@ -1,0 +1,15 @@
+{
+  "experiment_name": "multiseed_stability_cicids_rf",
+  "model": "rf",
+  "dataset": "cicids",
+  "max_samples": 100000,
+  "seeds": [42, 43, 44],
+  "output_root": "results/experiments",
+  "base_params": {
+    "n_estimators": 50,
+    "max_depth": 15,
+    "min_samples_leaf": 2,
+    "workers": 4,
+    "class_weight": "balanced_subsample"
+  }
+}

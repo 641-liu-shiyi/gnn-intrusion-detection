@@ -1,0 +1,18 @@
+{
+  "experiment_name": "ablation_class_weight_cicids_rf",
+  "model": "rf",
+  "dataset": "cicids",
+  "max_samples": 100000,
+  "seeds": [42],
+  "output_root": "results/experiments",
+  "base_params": {
+    "n_estimators": 50,
+    "max_depth": 15,
+    "min_samples_leaf": 2,
+    "workers": 4,
+    "class_weight": "balanced_subsample"
+  },
+  "ablations": {
+    "class_weight": ["balanced_subsample", "none"]
+  }
+}
